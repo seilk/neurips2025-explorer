@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, FormEvent, useEffect, useMemo, useState } from "react";
+import { Icon } from "@iconify/react";
 import type { ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkMath from "remark-math";
@@ -57,14 +58,6 @@ type PaperCardProps = {
 };
 
 const QUICK_FILTER_FIELDS = ["decision", "event_type", "topic"];
-const PAGE_SIZE_OPTIONS = [10, 20, 40, 100];
-const SORT_OPTIONS = [
-  { value: "name", label: "Title" },
-  { value: "decision", label: "Decision" },
-  { value: "event_type", label: "Event Type" },
-  { value: "session", label: "Session" },
-  { value: "topic", label: "Topic" },
-];
 
 const friendlyFieldName = (name: string) =>
   name
@@ -453,9 +446,9 @@ export default function Home() {
   const [results, setResults] = useState<PaperRecord[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(20);
-  const [sortBy, setSortBy] = useState<string>("name");
-  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
+  const pageSize = 20;
+  const sortBy = "name";
+  const sortOrder: "asc" | "desc" = "asc";
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [customField, setCustomField] = useState<string>("");
@@ -652,62 +645,9 @@ export default function Home() {
                 onChange={(event) => setSearchTerm(event.target.value)}
                 placeholder="Search title, authors, abstract, keywords, or any keyword you like"
               />
-              <div className={styles.searchExtras}>
-                <label>
-                  Results per page
-                  <select
-                    value={pageSize}
-                    onChange={(event) => {
-                      setPageSize(Number(event.target.value));
-                      setPage(1);
-                    }}
-                  >
-                    {PAGE_SIZE_OPTIONS.map((size) => (
-                      <option key={size} value={size}>
-                        {size}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  Sort field
-                  <select
-                    value={sortBy}
-                    onChange={(event) => {
-                      setSortBy(event.target.value);
-                      setPage(1);
-                    }}
-                  >
-                    {SORT_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                    {schema?.fields
-                      .filter((field) => !SORT_OPTIONS.find((option) => option.value === field.name))
-                      .map((field) => (
-                        <option key={field.name} value={field.name}>
-                          {friendlyFieldName(field.name)}
-                        </option>
-                      ))}
-                  </select>
-                </label>
-                <label>
-                  Sort order
-                  <select
-                    value={sortOrder}
-                    onChange={(event) => {
-                      const candidate = event.target.value === "desc" ? "desc" : "asc";
-                      setSortOrder(candidate);
-                      setPage(1);
-                    }}
-                  >
-                    <option value="asc">Ascending</option>
-                    <option value="desc">Descending</option>
-                  </select>
-                </label>
-                <button type="submit">Search now</button>
-              </div>
+              <button type="submit" className={styles.searchButton} aria-label="Search">
+                <Icon icon="mdi:magnify" fontSize={22} />
+              </button>
             </form>
             {schemaError && <div className={styles.error}>{schemaError}</div>}
           </section>
