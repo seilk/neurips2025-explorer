@@ -58,15 +58,18 @@ def lookup_arxiv_url(title: str, author_initial: str, author_last: str) -> str |
     if not cleaned_title:
         return None
 
-    author_initial_clean = author_initial.strip().lower()
-    author_last_clean = author_last.strip().lower()
+    author_initial_clean = author_initial.strip()
+    author_last_clean = author_last.strip()
     expected_author = (
-        f"{author_initial_clean} {author_last_clean}"
+        f"{author_initial_clean[:1].lower()} {author_last_clean.lower()}"
         if author_initial_clean and author_last_clean
         else ""
     )
 
-    query = quote_plus(f"{cleaned_title} arXiv")
+    query_parts = [cleaned_title]
+    if author_initial_clean and author_last_clean:
+        query_parts.append(f"intext: {author_initial_clean[:1]} {author_last_clean}")
+    query = quote_plus(" ".join(query_parts))
     search_url = f"https://www.google.com/search?q={query}&hl=en"
     try:
         response = requests.get(

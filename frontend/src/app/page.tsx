@@ -720,6 +720,12 @@ export default function Home() {
     }
   };
 
+  const scrollToTop = () => {
+    if (typeof window !== "undefined") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  };
+
   return (
     <div className={styles.page}>
       <div className={styles.container}>
@@ -852,6 +858,16 @@ export default function Home() {
             {results.map((paper) => (
               <PaperCard key={String(paper.id)} paper={paper} tokens={highlightTokens} />
             ))}
+            {results.length > 0 && (
+              <button
+                type="button"
+                onClick={scrollToTop}
+                className={styles.floatingTopButton}
+                aria-label="Go to top"
+              >
+                <Icon icon="mdi:arrow-up" fontSize={24} />
+              </button>
+            )}
           </section>
         </section>
       </div>
