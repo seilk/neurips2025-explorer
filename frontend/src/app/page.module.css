@@ -192,6 +192,17 @@
   flex-direction: column;
   gap: 16px;
   margin-top: 12px;
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
+  transition: max-height 0.25s ease, opacity 0.25s ease;
+}
+
+.panelContentOpen {
+  max-height: 600px;
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .filterGroup {
@@ -431,12 +442,28 @@
   gap: 12px;
 }
 
-.links a {
+.linkButton {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  color: var(--color-primary);
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: none;
+  background: var(--color-primary);
+  color: #fff;
   font-weight: 600;
+  cursor: pointer;
+  box-shadow: var(--shadow-soft);
+  transition: filter 0.2s ease;
+}
+
+.linkButton:hover {
+  filter: brightness(1.05);
+}
+
+.linkButton:disabled {
+  opacity: 0.7;
+  cursor: wait;
 }
 
 .clearButton {
@@ -446,41 +473,6 @@
   background: var(--color-surface);
   color: var(--color-subdued);
   cursor: pointer;
-}
-
-.floatingTopButton {
-  position: fixed;
-  bottom: 32px;
-  right: 32px;
-  width: 56px;
-  height: 56px;
-  border-radius: 50%;
-  border: none;
-  background: linear-gradient(135deg, var(--color-primary), #5585ff);
-  color: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 18px 35px rgba(37, 99, 235, 0.35);
-  cursor: pointer;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
-  z-index: 40;
-}
-
-.floatingTopButton:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 24px 40px rgba(37, 99, 235, 0.4);
-}
-
-.floatingTopButton:active {
-  transform: scale(0.96);
-}
-
-@media (max-width: 640px) {
-  .floatingTopButton {
-    bottom: 20px;
-    right: 20px;
-  }
 }
 
 .empty {

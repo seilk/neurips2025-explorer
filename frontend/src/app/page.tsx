@@ -376,6 +376,15 @@ function PaperCard({ paper, tokens }: PaperCardProps) {
   const abstractText = abstractRaw ? String(abstractRaw) : "";
   const authors = formatAuthorsList(authorsRaw);
   const institutions = formatInstitutionsList(authorsRaw);
+  const topicValue = paper["topic"];
+  const topicText = Array.isArray(topicValue)
+    ? (topicValue as unknown[])
+        .map((value) => (value == null ? "" : String(value)))
+        .filter((value) => value.trim().length > 0)
+        .join(", ")
+    : topicValue
+    ? String(topicValue)
+    : "";
   const keywords = Array.isArray(keywordsRaw)
     ? (keywordsRaw as unknown[]).map((value) => String(value))
     : [];
@@ -383,23 +392,38 @@ function PaperCard({ paper, tokens }: PaperCardProps) {
     { label: "Decision", value: paper["decision"] },
     { label: "Event Type", value: eventTypeRaw },
     { label: "Session", value: paper["session"] },
-    { label: "Topic", value: paper["topic"] },
     { label: "Poster Position", value: paper["poster_position"] },
   ].filter((item) => item.value !== undefined && item.value !== null && item.value !== "");
 
   const encodedTitle = title ? encodeURIComponent(title) : "";
-  const arxivLucky = encodedTitle
-    ? `https://www.google.com/search?q=${encodeURIComponent(`${title} site:arxiv.org/abs`)}&btnI=I%27m+Feeling+Lucky`
-    : undefined;
-  const arxivFallback = encodedTitle
+  const fallbackArxiv = encodedTitle
     ? `https://www.google.com/search?q=${encodedTitle}`
     : undefined;
-  const externalLinks = [
-    {
-      label: "Go to arXiv",
-      url: arxivLucky ?? arxivFallback,
-    },
-  ].filter((link) => link.url);
+  const [arxivPending, setArxivPending] = useState(false);
+
+  const handleArxivClick = async () => {
+    if (!title) {
+      if (fallbackArxiv) {
+        window.open(fallbackArxiv, "_blank", "noopener,noreferrer");
+      }
+      return;
+    }
+    const fallback = fallbackArxiv ?? `https://www.google.com/search?q=${encodeURIComponent(title)}`;
+    try {
+      setArxivPending(true);
+      const response = await fetch(`${API_BASE_URL}/arxiv?title=${encodeURIComponent(title)}`);
+      if (!response.ok) {
+        throw new Error(`ArXiv lookup failed: ${response.status}`);
+      }
+      const data: { url?: string } = await response.json();
+      const target = typeof data.url === "string" && data.url.trim().length > 0 ? data.url : fallback;
+      window.open(target, "_blank", "noopener,noreferrer");
+    } catch {
+      window.open(fallback, "_blank", "noopener,noreferrer");
+    } finally {
+      setArxivPending(false);
+    }
+  };
 
   return (
     <article className={styles.card}>
@@ -414,6 +438,11 @@ function PaperCard({ paper, tokens }: PaperCardProps) {
           {institutions && (
             <span className={styles.metaItem}>
               <span>Institutions:</span> {renderHighlightedText(institutions, tokens)}
+            </span>
+          )}
+          {topicText && (
+            <span className={styles.metaItem}>
+              <span>Topic:</span> {renderHighlightedText(topicText, tokens)}
             </span>
           )}
         </p>
@@ -442,16 +471,17 @@ function PaperCard({ paper, tokens }: PaperCardProps) {
           ))}
         </div>
       )}
-      {externalLinks.length > 0 && (
-        <div className={styles.links}>
-          {externalLinks.map((link) => (
-            <a key={link.label} href={link.url} target="_blank" rel="noreferrer">
-              <Icon icon="mdi:book-open-variant" fontSize={18} />
-              {link.label}
-            </a>
-          ))}
-        </div>
-      )}
+      <div className={styles.links}>
+        <button
+          type="button"
+          className={styles.linkButton}
+          onClick={handleArxivClick}
+          disabled={arxivPending}
+        >
+          <Icon icon="mdi:book-open-variant" fontSize={18} />
+          {arxivPending ? "Opening..." : "Go to arXiv"}
+        </button>
+      </div>
     </article>
   );
 }
@@ -469,13 +499,6 @@ export default function Home() {
   const [quickFiltersOpen, setQuickFiltersOpen] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const scrollToTop = () => {
-    if (typeof window === "undefined") {
-      return;
-    }
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  };
 
   const highlightTokens = useMemo(() => {
     if (!query) {
@@ -598,28 +621,25 @@ export default function Home() {
     setPage(1);
   };
 
-  const setFilterValues = (field: string, values: string[]) => {
+  const toggleFilter = (field: string, value: string) => {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return;
+    }
     setFilters((previous) => {
-      const cleaned = values
-        .map((value) => value.trim())
-        .filter((value) => value.length > 0);
-      if (cleaned.length === 0) {
-        const rest = { ...previous };
-        delete rest[field];
-        return rest;
+      const currentValues = previous[field] ?? [];
+      if (currentValues.includes(trimmed)) {
+        const nextValues = currentValues.filter((item) => item !== trimmed);
+        if (nextValues.length === 0) {
+          const rest = { ...previous };
+          delete rest[field];
+          return rest;
+        }
+        return { ...previous, [field]: nextValues };
       }
-      return { ...previous, [field]: cleaned };
+      return { ...previous, [field]: [...currentValues, trimmed] };
     });
     setPage(1);
-  };
-
-  const toggleFilter = (field: string, value: string) => {
-    const currentValues = filters[field] ?? [];
-    if (currentValues.includes(value)) {
-      setFilterValues(field, currentValues.filter((item) => item !== value));
-    } else {
-      setFilterValues(field, [...currentValues, value]);
-    }
   };
 
   const removeFilter = (field: string, value?: string) => {
@@ -700,26 +720,27 @@ export default function Home() {
                   className={styles.panelToggleIcon}
                 />
               </button>
-              {quickFiltersOpen && (
-                <div className={styles.panelContent}>
-                  {quickFilters.length === 0 && (
-                    <p className={styles.summaryText}>No recommended filters are available.</p>
-                  )}
-                  {quickFilters.map((field) => (
-                    <FilterSection
-                      key={field}
-                      field={field}
-                      label={friendlyFieldName(field)}
-                      options={schema?.facets?.[field] ?? []}
-                      selected={filters[field] ?? []}
-                      onToggle={(value) => toggleFilter(field, value)}
-                    />
-                  ))}
-                  <button className={styles.clearButton} onClick={clearFilters} type="button">
-                    Clear all filters
-                  </button>
-                </div>
-              )}
+              <div
+                className={`${styles.panelContent} ${quickFiltersOpen ? styles.panelContentOpen : ""}`}
+                aria-hidden={!quickFiltersOpen}
+              >
+                {quickFilters.length === 0 && (
+                  <p className={styles.summaryText}>No recommended filters are available.</p>
+                )}
+                {quickFilters.map((field) => (
+                  <FilterSection
+                    key={field}
+                    field={field}
+                    label={friendlyFieldName(field)}
+                    options={schema?.facets?.[field] ?? []}
+                    selected={filters[field] ?? []}
+                    onToggle={(value) => toggleFilter(field, value)}
+                  />
+                ))}
+                <button className={styles.clearButton} onClick={clearFilters} type="button">
+                  Clear all filters
+                </button>
+              </div>
               {activeFilters.length > 0 && (
                 <div className={styles.activeFilters}>
                   {activeFilters.map((item) => (
@@ -792,22 +813,9 @@ export default function Home() {
             {results.map((paper) => (
               <PaperCard key={String(paper.id)} paper={paper} tokens={highlightTokens} />
             ))}
-            {results.length > 0 && (
-              <button type="button" onClick={scrollToTop} className={styles.scrollTopButton}>
-                Go to top
-              </button>
-            )}
           </section>
         </section>
       </div>
-      <button
-        type="button"
-        className={styles.floatingTopButton}
-        onClick={scrollToTop}
-        aria-label="Go to top"
-      >
-        <Icon icon="mdi:arrow-up" fontSize={22} />
-      </button>
     </div>
   );
 }
