@@ -37,6 +37,15 @@ def health_check() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/")
+def root() -> dict[str, str]:
+    """Simple landing route so Render and users get a 200 response."""
+    return {
+        "status": "ok",
+        "message": "NeurIPS 2025 Papers API. See /docs for interactive documentation or /health for status.",
+    }
+
+
 @app.get("/papers/schema")
 def schema(store: PaperStore = Depends(get_store)) -> dict[str, object]:
     return store.schema()
