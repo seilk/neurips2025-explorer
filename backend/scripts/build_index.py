@@ -83,11 +83,25 @@ def normalise_record(record: Dict[str, Any]) -> Dict[str, Any]:
 
 def prepare_rows(records: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
     rows: List[Dict[str, Any]] = []
+    seen_titles: set[str] = set()
+    duplicates = 0
     for record in records:
+        name = record.get("name")
+        title_key = None
+        if isinstance(name, str) and name.strip():
+            title_key = name.strip().lower()
+            if title_key in seen_titles:
+                duplicates += 1
+                continue
+
         row = normalise_record(record)
         if "id" not in row or row["id"] is None:
             raise ValueError("Each record must include a numeric 'id'")
+        if title_key:
+            seen_titles.add(title_key)
         rows.append(row)
+    if duplicates:
+        LOGGER.info("Skipped %d duplicate titles", duplicates)
     return rows
 
 

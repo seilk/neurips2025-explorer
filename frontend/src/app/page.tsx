@@ -2,7 +2,6 @@
 
 import { Fragment, FormEvent, useEffect, useMemo, useState } from "react";
 import { Icon } from "@iconify/react";
-import { Listbox, Transition } from "@headlessui/react";
 import type { ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkMath from "remark-math";
@@ -51,13 +50,15 @@ type PaperCardProps = {
 };
 
 const QUICK_FILTER_FIELDS = ["decision", "event_type", "topic"];
+const PAGE_SIZE = 20;
+type SortMode = "random" | "az";
 
-type QuickFilterDropdownProps = {
+type FilterSectionProps = {
   field: string;
   label: string;
   options: string[];
   selected: string[];
-  onChange: (values: string[]) => void;
+  onToggle: (value: string) => void;
 };
 
 const friendlyFieldName = (name: string) =>
@@ -92,6 +93,15 @@ const formatValue = (value: unknown): string => {
   }
   return String(value);
 };
+
+function shuffleResults<T>(items: T[]): T[] {
+  const arr = [...items];
+  for (let i = arr.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
 
 function MarkdownBlock({ text, tokens }: { text: string; tokens: string[] }) {
   const normalised = useMemo(() => text.replace(/\r\n/g, "\n").trim(), [text]);
@@ -308,51 +318,49 @@ function renderValueWithHighlight(value: unknown, tokens: string[]): ReactNode {
   return renderHighlightedText(String(value), tokens);
 }
 
-function QuickFilterDropdown({ field, label, options, selected, onChange }: QuickFilterDropdownProps) {
-  const summary = selected.length > 0 ? `${selected.length} selected` : "All";
+function FilterSection({ field, label, options, selected, onToggle }: FilterSectionProps) {
+  const [term, setTerm] = useState("");
+
+  const filtered = useMemo(() => {
+    if (!term) {
+      return options;
+    }
+    const lowered = term.toLowerCase();
+    return options.filter((option) => option.toLowerCase().includes(lowered));
+  }, [options, term]);
 
   return (
-    <div className={styles.dropdownGroup}>
-      <p className={styles.sectionTitle}>{label}</p>
-      <Listbox value={selected} onChange={onChange} multiple>
-        <div className={styles.dropdownContainer}>
-          <Listbox.Button className={styles.dropdownButton}>
-            <span className={styles.dropdownButtonLabel}>{summary}</span>
-            <Icon icon="mdi:chevron-down" fontSize={18} />
-          </Listbox.Button>
-          <Transition
-            as={Fragment}
-            leave="transition ease-in duration-100"
-            leaveFrom="opacity-100"
-            leaveTo="opacity-0"
-          >
-            <Listbox.Options className={styles.dropdownOptions}>
-              {options.length === 0 ? (
-                <div className={styles.dropdownEmpty}>No options</div>
-              ) : (
-                options.map((option) => (
-                  <Listbox.Option
-                    key={`${field}-${option}`}
-                    value={option}
-                    className={({ active }) =>
-                      [styles.dropdownOption, active ? styles.dropdownOptionActive : null]
-                        .filter(Boolean)
-                        .join(" ")
-                    }
-                  >
-                    {({ selected: isSelected }) => (
-                      <>
-                        <span>{option}</span>
-                        {isSelected && <Icon icon="mdi:check" fontSize={18} />}
-                      </>
-                    )}
-                  </Listbox.Option>
-                ))
-              )}
-            </Listbox.Options>
-          </Transition>
-        </div>
-      </Listbox>
+    <div className={styles.filterGroup}>
+      <div className={styles.filterGroupHeader}>
+        <p className={styles.sectionTitle}>{label}</p>
+        {options.length > 6 && (
+          <input
+            className={styles.filterSearch}
+            placeholder={`Search ${label}`}
+            value={term}
+            onChange={(event) => setTerm(event.target.value)}
+          />
+        )}
+      </div>
+      <div className={styles.checkboxList}>
+        {filtered.length === 0 ? (
+          <span className={styles.summaryText}>No matching options.</span>
+        ) : (
+          filtered.map((option) => {
+            const checked = selected.includes(option);
+            return (
+              <label key={`${field}-${option}`} className={styles.checkboxItem}>
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={() => onToggle(option)}
+                />
+                <span>{option}</span>
+              </label>
+            );
+          })
+        )}
+      </div>
     </div>
   );
 }
@@ -379,13 +387,28 @@ function PaperCard({ paper, tokens }: PaperCardProps) {
     { label: "Poster Position", value: paper["poster_position"] },
   ].filter((item) => item.value !== undefined && item.value !== null && item.value !== "");
 
+  const encodedTitle = title ? encodeURIComponent(title) : "";
   const externalLinks = [
-    { label: "OpenReview", url: typeof paper["paper_url"] === "string" ? (paper["paper_url"] as string) : undefined },
     {
-      label: "Virtual Event Page",
-      url: typeof paper["virtualsite_url"] === "string" ? `https://neurips.cc${paper["virtualsite_url"]}` : undefined,
+      label: "OpenReview",
+      url: typeof paper["paper_url"] === "string" ? (paper["paper_url"] as string) : undefined,
+      icon: "mdi:open-in-new",
     },
-    { label: "Source", url: typeof paper["sourceurl"] === "string" ? (paper["sourceurl"] as string) : undefined },
+    {
+      label: "Virtual Event",
+      url: typeof paper["virtualsite_url"] === "string" ? `https://neurips.cc${paper["virtualsite_url"]}` : undefined,
+      icon: "mdi:web",
+    },
+    {
+      label: "Source",
+      url: typeof paper["sourceurl"] === "string" ? (paper["sourceurl"] as string) : undefined,
+      icon: "mdi:link-variant",
+    },
+    {
+      label: "Google",
+      url: encodedTitle ? `https://www.google.com/search?q=${encodedTitle}` : undefined,
+      icon: "mdi:google",
+    },
   ].filter((link) => link.url);
 
   return (
@@ -433,6 +456,7 @@ function PaperCard({ paper, tokens }: PaperCardProps) {
         <div className={styles.links}>
           {externalLinks.map((link) => (
             <a key={link.label} href={link.url} target="_blank" rel="noreferrer">
+              {link.icon && <Icon icon={link.icon} fontSize={18} style={{ marginRight: 6 }} />}
               {link.label}
             </a>
           ))}
@@ -451,9 +475,8 @@ export default function Home() {
   const [results, setResults] = useState<PaperRecord[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
-  const pageSize = 20;
-  const sortBy = "name";
-  const sortOrder: "asc" | "desc" = "asc";
+  const [sortMode, setSortMode] = useState<SortMode>("random");
+  const [quickFiltersOpen, setQuickFiltersOpen] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -508,10 +531,12 @@ export default function Home() {
       try {
         const payload: SearchPayload = {
           page,
-          page_size: pageSize,
-          sort_by: sortBy,
-          sort_order: sortOrder,
+          page_size: PAGE_SIZE,
         };
+        if (sortMode === "az") {
+          payload.sort_by = "name";
+          payload.sort_order = "asc";
+        }
         if (query) {
           payload.query = query;
         }
@@ -528,12 +553,22 @@ export default function Home() {
           throw new Error(`Search request failed. (HTTP ${response.status})`);
         }
         const data: SearchResponse = await response.json();
-        const totalPages = Math.max(1, Math.ceil(data.total / pageSize));
+        const totalPages = Math.max(1, Math.ceil(data.total / PAGE_SIZE));
         if (page > totalPages && data.total > 0) {
           setPage(totalPages);
           return;
         }
-        setResults(data.results);
+        let processedResults = data.results;
+        if (sortMode === "random") {
+          processedResults = shuffleResults(processedResults);
+        } else if (sortMode === "az") {
+          processedResults = [...processedResults].sort((a, b) => {
+            const nameA = (a.name ?? "").toString().toLowerCase();
+            const nameB = (b.name ?? "").toString().toLowerCase();
+            return nameA.localeCompare(nameB);
+          });
+        }
+        setResults(processedResults);
         setTotal(data.total);
       } catch (err) {
         if ((err as Error).name === "AbortError") {
@@ -550,7 +585,7 @@ export default function Home() {
 
     runSearch();
     return () => controller.abort();
-  }, [query, filters, page, pageSize, sortBy, sortOrder]);
+  }, [query, filters, page, sortMode]);
 
   const quickFilters = useMemo(() => {
     if (!schema) {
@@ -565,7 +600,7 @@ export default function Home() {
     );
   }, [filters]);
 
-  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault();
@@ -586,6 +621,15 @@ export default function Home() {
       return { ...previous, [field]: cleaned };
     });
     setPage(1);
+  };
+
+  const toggleFilter = (field: string, value: string) => {
+    const currentValues = filters[field] ?? [];
+    if (currentValues.includes(value)) {
+      setFilterValues(field, currentValues.filter((item) => item !== value));
+    } else {
+      setFilterValues(field, [...currentValues, value]);
+    }
   };
 
   const removeFilter = (field: string, value?: string) => {
@@ -611,11 +655,29 @@ export default function Home() {
     setPage(1);
   };
 
+  const handleSortModeChange = (mode: SortMode) => {
+    setSortMode((prev) => {
+      if (prev === mode) {
+        return prev;
+      }
+      return mode;
+    });
+    setPage(1);
+  };
+
+  const handleTitleClick = () => {
+    if (typeof window !== "undefined") {
+      window.location.href = window.location.pathname;
+    }
+  };
+
   return (
     <div className={styles.page}>
       <div className={styles.container}>
         <header className={styles.header}>
-          <h1 className={styles.title}>NeurIPS 2025 Papers Explorer</h1>
+          <button type="button" className={styles.titleButton} onClick={handleTitleClick}>
+            NeurIPS 2025 Papers Explorer
+          </button>
           <p className={styles.subtitle}>Browse 5,871 accepted papers.</p>
           <section className={styles.searchBar}>
             <form onSubmit={handleSubmit}>
@@ -636,23 +698,38 @@ export default function Home() {
         <section className={styles.mainContent}>
           <aside className={styles.sidebar}>
             <div className={styles.panel}>
-              <h2 className={styles.panelTitle}>Quick filters</h2>
-              {quickFilters.length === 0 && (
-                <p className={styles.summaryText}>No recommended filters are available.</p>
-              )}
-              {quickFilters.map((field) => (
-                <QuickFilterDropdown
-                  key={field}
-                  field={field}
-                  label={friendlyFieldName(field)}
-                  options={schema?.facets?.[field] ?? []}
-                  selected={filters[field] ?? []}
-                  onChange={(values) => setFilterValues(field, values)}
+              <button
+                type="button"
+                className={styles.panelToggle}
+                onClick={() => setQuickFiltersOpen((prev) => !prev)}
+              >
+                <span>Quick filters</span>
+                <Icon
+                  icon={quickFiltersOpen ? "mdi:chevron-up" : "mdi:chevron-down"}
+                  fontSize={20}
+                  className={styles.panelToggleIcon}
                 />
-              ))}
-              <button className={styles.clearButton} onClick={clearFilters} type="button">
-                Clear all filters
               </button>
+              {quickFiltersOpen && (
+                <div className={styles.panelContent}>
+                  {quickFilters.length === 0 && (
+                    <p className={styles.summaryText}>No recommended filters are available.</p>
+                  )}
+                  {quickFilters.map((field) => (
+                    <FilterSection
+                      key={field}
+                      field={field}
+                      label={friendlyFieldName(field)}
+                      options={schema?.facets?.[field] ?? []}
+                      selected={filters[field] ?? []}
+                      onToggle={(value) => toggleFilter(field, value)}
+                    />
+                  ))}
+                  <button className={styles.clearButton} onClick={clearFilters} type="button">
+                    Clear all filters
+                  </button>
+                </div>
+              )}
               {activeFilters.length > 0 && (
                 <div className={styles.activeFilters}>
                   {activeFilters.map((item) => (
@@ -670,9 +747,28 @@ export default function Home() {
 
           <section className={styles.results}>
             <div className={styles.summaryBar}>
-              <p className={styles.summaryText}>
-                Showing {total === 0 ? 0 : (page - 1) * pageSize + 1}-{Math.min(page * pageSize, total)} of {total.toLocaleString()} results.
-              </p>
+              <div className={styles.summaryInfo}>
+                <p className={styles.summaryText}>
+                  Showing {total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1}-{Math.min(page * PAGE_SIZE, total)} of {total.toLocaleString()} results.
+                </p>
+                <div className={styles.sortToggle}>
+                  <span className={styles.sortLabel}>Sort:</span>
+                  <button
+                    type="button"
+                    className={sortMode === "random" ? styles.sortButtonActive : styles.sortButton}
+                    onClick={() => handleSortModeChange("random")}
+                  >
+                    Shuffle
+                  </button>
+                  <button
+                    type="button"
+                    className={sortMode === "az" ? styles.sortButtonActive : styles.sortButton}
+                    onClick={() => handleSortModeChange("az")}
+                  >
+                    A-Z
+                  </button>
+                </div>
+              </div>
               <div className={`${styles.pagination} ${styles.summaryText}`}>
                 <div className={styles.paginationControls}>
                   <button
