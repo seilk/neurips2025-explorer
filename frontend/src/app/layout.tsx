@@ -41,7 +41,7 @@ export default function RootLayout({
           }}
         >
           <a
-            href="https://github.com/seilk"
+            href="https://seilk.github.io/"
             target="_blank"
             rel="noopener noreferrer"
             style={{ color: "inherit", textDecoration: "none" }}
