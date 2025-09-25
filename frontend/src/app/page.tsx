@@ -49,7 +49,7 @@ type PaperCardProps = {
   tokens: string[];
 };
 
-const QUICK_FILTER_FIELDS = ["decision", "event_type", "topic"];
+const QUICK_FILTER_FIELDS = ["decision", "topic"];
 const PAGE_SIZE = 20;
 type SortMode = "random" | "az";
 
@@ -388,26 +388,16 @@ function PaperCard({ paper, tokens }: PaperCardProps) {
   ].filter((item) => item.value !== undefined && item.value !== null && item.value !== "");
 
   const encodedTitle = title ? encodeURIComponent(title) : "";
+  const arxivLucky = encodedTitle
+    ? `https://www.google.com/search?q=${encodeURIComponent(`${title} site:arxiv.org/abs`)}&btnI=I%27m+Feeling+Lucky`
+    : undefined;
+  const arxivFallback = encodedTitle
+    ? `https://www.google.com/search?q=${encodedTitle}`
+    : undefined;
   const externalLinks = [
     {
-      label: "OpenReview",
-      url: typeof paper["paper_url"] === "string" ? (paper["paper_url"] as string) : undefined,
-      icon: "mdi:open-in-new",
-    },
-    {
-      label: "Virtual Event",
-      url: typeof paper["virtualsite_url"] === "string" ? `https://neurips.cc${paper["virtualsite_url"]}` : undefined,
-      icon: "mdi:web",
-    },
-    {
-      label: "Source",
-      url: typeof paper["sourceurl"] === "string" ? (paper["sourceurl"] as string) : undefined,
-      icon: "mdi:link-variant",
-    },
-    {
-      label: "Google",
-      url: encodedTitle ? `https://www.google.com/search?q=${encodedTitle}` : undefined,
-      icon: "mdi:google",
+      label: "Go to arXiv",
+      url: arxivLucky ?? arxivFallback,
     },
   ].filter((link) => link.url);
 
@@ -456,7 +446,7 @@ function PaperCard({ paper, tokens }: PaperCardProps) {
         <div className={styles.links}>
           {externalLinks.map((link) => (
             <a key={link.label} href={link.url} target="_blank" rel="noreferrer">
-              {link.icon && <Icon icon={link.icon} fontSize={18} style={{ marginRight: 6 }} />}
+              <Icon icon="mdi:book-open-variant" fontSize={18} />
               {link.label}
             </a>
           ))}
