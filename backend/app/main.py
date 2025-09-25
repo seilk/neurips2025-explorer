@@ -2,10 +2,10 @@
 from __future__ import annotations
 
 from functools import lru_cache
-from urllib.parse import quote_plus
-import xml.etree.ElementTree as ET
+from urllib.parse import parse_qs, quote_plus, urlparse
 
 import requests
+from bs4 import BeautifulSoup
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -52,43 +52,62 @@ def root() -> dict[str, str]:
 
 
 @lru_cache(maxsize=256)
-def lookup_arxiv_url(title: str) -> str | None:
-    """Return the best arXiv link for a paper title, or None if unavailable."""
-    cleaned = title.strip()
-    if not cleaned:
+def lookup_arxiv_url(title: str, author_initial: str, author_last: str) -> str | None:
+    """Return the best arXiv link using Google results with author heuristics."""
+    cleaned_title = title.strip()
+    if not cleaned_title:
         return None
-    query = quote_plus(f'"{cleaned}"')
-    url = f"http://export.arxiv.org/api/query?search_query=ti:{query}&start=0&max_results=1"
+
+    author_initial_clean = author_initial.strip().lower()
+    author_last_clean = author_last.strip().lower()
+    expected_author = (
+        f"{author_initial_clean} {author_last_clean}"
+        if author_initial_clean and author_last_clean
+        else ""
+    )
+
+    query = quote_plus(f"{cleaned_title} arXiv")
+    search_url = f"https://www.google.com/search?q={query}&hl=en"
     try:
         response = requests.get(
-            url,
-            headers={"User-Agent": "neurips2025-explorer/1.0 (+https://github.com/seilk/neurips2025-explorer)"},
+            search_url,
+            headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+            },
             timeout=5,
         )
         response.raise_for_status()
     except requests.RequestException:
         return None
 
-    try:
-        root = ET.fromstring(response.text)
-    except ET.ParseError:
+    soup = BeautifulSoup(response.text, "html.parser")
+    first_result = soup.select_one("div.g")
+    if first_result is None:
         return None
 
-    ns = {"atom": "http://www.w3.org/2005/Atom"}
-    entry = root.find("atom:entry", ns)
-    if entry is None:
+    anchor = first_result.find("a", href=True)
+    if anchor is None:
+        return None
+    href = anchor["href"].strip()
+
+    if href.startswith("/url?"):
+        parsed = urlparse(href)
+        target = parse_qs(parsed.query).get("q", [href])[0]
+    else:
+        target = href
+
+    if "arxiv.org/abs" not in target:
         return None
 
-    id_text = entry.findtext("atom:id", default="", namespaces=ns).strip()
-    if "arxiv.org/abs" in id_text:
-        return id_text
+    header_elem = first_result.select_one(".YrbPuc")
+    if expected_author:
+        if header_elem is None:
+            return None
+        header_text = header_elem.get_text(" ", strip=True).lower()
+        if expected_author not in header_text:
+            return None
 
-    for link in entry.findall("atom:link", ns):
-        href = link.attrib.get("href", "").strip()
-        if "arxiv.org/abs" in href:
-            return href
-
-    return None
+    return target
 
 
 @app.get("/papers/schema")
@@ -118,9 +137,13 @@ def get_paper(paper_id: int, store: PaperStore = Depends(get_store)) -> PaperRes
 
 
 @app.get("/arxiv")
-def arxiv_lookup(title: str = Query(..., min_length=3, max_length=200)) -> dict[str, str]:
+def arxiv_lookup(
+    title: str = Query(..., min_length=3, max_length=200),
+    author_initial: str = Query("", max_length=10),
+    author_last: str = Query("", max_length=120),
+) -> dict[str, str]:
     """Resolve the most relevant arXiv link for a paper title."""
-    resolved = lookup_arxiv_url(title)
+    resolved = lookup_arxiv_url(title, author_initial, author_last)
     fallback = f"https://www.google.com/search?q={quote_plus(title)}"
     if resolved and "arxiv.org/abs" in resolved:
         return {"url": resolved, "source": "arxiv"}

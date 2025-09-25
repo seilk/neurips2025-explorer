@@ -385,6 +385,35 @@ function PaperCard({ paper, tokens }: PaperCardProps) {
     : topicValue
     ? String(topicValue)
     : "";
+
+  let firstAuthorInitial = "";
+  let firstAuthorLast = "";
+  if (Array.isArray(authorsRaw) && authorsRaw.length > 0) {
+    const firstAuthorEntry = authorsRaw[0];
+    let fullName = "";
+    if (typeof firstAuthorEntry === "string") {
+      fullName = firstAuthorEntry;
+    } else if (firstAuthorEntry && typeof firstAuthorEntry === "object") {
+      const candidate = firstAuthorEntry as Record<string, unknown>;
+      if (typeof candidate.fullname === "string") {
+        fullName = candidate.fullname;
+      } else if (typeof candidate.name === "string") {
+        fullName = candidate.name;
+      } else if (typeof candidate.display_name === "string") {
+        fullName = candidate.display_name;
+      }
+    }
+    const parts = fullName
+      .split(/\s+/)
+      .map((segment) => segment.trim())
+      .filter((segment) => segment.length > 0);
+    if (parts.length >= 2) {
+      firstAuthorInitial = parts[0][0]?.toUpperCase() ?? "";
+      firstAuthorLast = parts[parts.length - 1];
+    } else if (parts.length === 1) {
+      firstAuthorLast = parts[0];
+    }
+  }
   const keywords = Array.isArray(keywordsRaw)
     ? (keywordsRaw as unknown[]).map((value) => String(value))
     : [];
@@ -411,7 +440,12 @@ function PaperCard({ paper, tokens }: PaperCardProps) {
     const fallback = fallbackArxiv ?? `https://www.google.com/search?q=${encodeURIComponent(title)}`;
     try {
       setArxivPending(true);
-      const response = await fetch(`${API_BASE_URL}/arxiv?title=${encodeURIComponent(title)}`);
+      const searchParams = new URLSearchParams({ title });
+      if (firstAuthorInitial && firstAuthorLast) {
+        searchParams.append("author_initial", firstAuthorInitial);
+        searchParams.append("author_last", firstAuthorLast);
+      }
+      const response = await fetch(`${API_BASE_URL}/arxiv?${searchParams.toString()}`);
       if (!response.ok) {
         throw new Error(`ArXiv lookup failed: ${response.status}`);
       }
