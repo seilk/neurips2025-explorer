@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 from urllib.parse import parse_qs, quote_plus, urlparse
+import xml.etree.ElementTree as ET
 
 import requests
 from bs4 import BeautifulSoup
@@ -29,7 +30,7 @@ def _resolve_google_href(href: str) -> str:
     href = (href or "").strip()
     if not href:
         return ""
-    if href.startswith("/url?"):
+    if href.startswith("/url?") or href.startswith("https://www.google.com/url?") or href.startswith("http://www.google.com/url?"):
         parsed = urlparse(href)
         qs = parse_qs(parsed.query)
         for key in ("q", "url"):
@@ -72,6 +73,84 @@ def _arxiv_abs_url_from_pdf(url: str) -> str | None:
     cleaned = parsed._replace(path=new_path, query="", fragment="")
     return cleaned.geturl()
 
+
+def _normalize_title(text: str) -> str:
+    # Simple normalization: lowercase, collapse spaces, strip punctuation-like chars
+    keep = []
+    for ch in text.lower():
+        if ch.isalnum() or ch.isspace():
+            keep.append(ch)
+        else:
+            keep.append(" ")
+    return " ".join("".join(keep).split())
+
+
+def _lookup_arxiv_via_export_api(title: str, author_last: str) -> str | None:
+    """Query arXiv export API using title phrase and optional author filter.
+
+    Returns an /abs/ URL or None.
+    """
+    cleaned_title = title.strip()
+    if not cleaned_title:
+        return None
+    # Build query: exact title phrase + optional author last name
+    q = f'ti:"{cleaned_title}"'
+    if author_last.strip():
+        q += f" AND au:{author_last.strip()}"
+    url = f"http://export.arxiv.org/api/query?search_query={quote_plus(q)}&start=0&max_results=5"
+    try:
+        resp = requests.get(
+            url,
+            headers={"User-Agent": "neurips2025-explorer/1.0 (+https://github.com/seilk/neurips2025-explorer)"},
+            timeout=5,
+        )
+        resp.raise_for_status()
+    except requests.RequestException:
+        return None
+
+    try:
+        root = ET.fromstring(resp.text)
+    except ET.ParseError:
+        return None
+
+    ns = {"atom": "http://www.w3.org/2005/Atom"}
+    desired = _normalize_title(cleaned_title)
+    best: str | None = None
+    for entry in root.findall("atom:entry", ns):
+        entry_title = (entry.findtext("atom:title", default="", namespaces=ns) or "").strip()
+        norm_entry = _normalize_title(entry_title)
+        # Prefer exact normalized match
+        if norm_entry == desired:
+            # get id or alternate link
+            id_text = (entry.findtext("atom:id", default="", namespaces=ns) or "").strip()
+            if id_text and _is_arxiv_abs(id_text):
+                return id_text
+            for link in entry.findall("atom:link", ns):
+                href = link.attrib.get("href", "").strip()
+                if _is_arxiv_abs(href):
+                    return href
+                if _is_arxiv_pdf(href):
+                    converted = _arxiv_abs_url_from_pdf(href)
+                    if converted:
+                        return converted
+        # Keep the first sensible candidate as a fallback
+        if best is None:
+            id_text = (entry.findtext("atom:id", default="", namespaces=ns) or "").strip()
+            if _is_arxiv_abs(id_text):
+                best = id_text
+            else:
+                for link in entry.findall("atom:link", ns):
+                    href = link.attrib.get("href", "").strip()
+                    if _is_arxiv_abs(href):
+                        best = href
+                        break
+                    if _is_arxiv_pdf(href):
+                        conv = _arxiv_abs_url_from_pdf(href)
+                        if conv:
+                            best = conv
+                            break
+    return best
+
 # Enable CORS for the web frontend. Adjust the origins list when you know the
 # exact deployment domains.
 app.add_middleware(
@@ -111,11 +190,17 @@ def root() -> dict[str, str]:
 
 @lru_cache(maxsize=256)
 def lookup_arxiv_url(title: str, author_initial: str, author_last: str) -> str | None:
-    """Return the best arXiv link using Google results with author heuristics."""
+    """Return the best arXiv link using arXiv API first, then Google SERP fallback."""
     cleaned_title = title.strip()
     if not cleaned_title:
         return None
 
+    # 1) Try arXiv export API (most reliable and bot-safe)
+    api_hit = _lookup_arxiv_via_export_api(cleaned_title, author_last)
+    if api_hit:
+        return api_hit
+
+    # 2) Fallback to Google SERP parsing
     author_last_clean = author_last.strip()
     query_parts = [cleaned_title]
     if author_last_clean:
