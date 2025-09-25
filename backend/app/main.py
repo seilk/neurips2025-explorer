@@ -102,14 +102,6 @@ def lookup_arxiv_url(title: str, author_initial: str, author_last: str) -> str |
     if "arxiv.org/abs" not in target:
         return None
 
-    header_elem = first_result.select_one(".YrbPuc")
-    if expected_author:
-        if header_elem is None:
-            return None
-        header_text = header_elem.get_text(" ", strip=True).lower()
-        if expected_author not in header_text:
-            return None
-
     return target
 
 
