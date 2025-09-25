@@ -484,18 +484,23 @@ function PaperCard({ paper, tokens }: PaperCardProps) {
       {abstractText && (
         <details className={styles.abstractToggle}>
           <summary>Show abstract</summary>
-          <MarkdownBlock text={abstractText} tokens={tokens} />
+          <div className={styles.abstractContent}>
+            <MarkdownBlock text={abstractText} tokens={tokens} />
+          </div>
         </details>
       )}
-      {metadata.length > 0 && (
-        <div className={styles.cardMeta}>
-          {metadata.map((item) => (
-            <span key={item.label} className={styles.metaItem}>
-              <span>{item.label}:</span> {renderValueWithHighlight(item.value, tokens)}
-            </span>
-          ))}
-        </div>
-      )}
+      <div className={styles.cardMeta}>
+        {topicText && (
+          <span className={styles.metaItem}>
+            <span>Topic:</span> {renderHighlightedText(topicText, tokens)}
+          </span>
+        )}
+        {metadata.map((item) => (
+          <span key={item.label} className={styles.metaItem}>
+            <span>{item.label}:</span> {renderValueWithHighlight(item.value, tokens)}
+          </span>
+        ))}
+      </div>
       {keywords.length > 0 && (
         <div className={styles.tags}>
           {keywords.map((keyword) => (

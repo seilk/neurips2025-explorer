@@ -409,17 +409,33 @@
   background: #f8fafc;
   border: 1px solid var(--color-border);
   border-radius: 12px;
-  padding: 12px 16px;
+  padding: 0;
+  overflow: hidden;
 }
 
 .abstractToggle summary {
   cursor: pointer;
   font-weight: 600;
   color: var(--color-primary);
+  padding: 12px 16px;
+  transition: background 0.2s ease;
 }
 
 .abstractToggle[open] summary {
-  margin-bottom: 10px;
+  background: rgba(37, 99, 235, 0.08);
+}
+
+.abstractContent {
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  transition: max-height 0.3s ease, opacity 0.3s ease;
+}
+
+.abstractToggle[open] .abstractContent {
+  max-height: 800px;
+  opacity: 1;
+  padding: 12px 16px 16px;
 }
 
 .tags {
