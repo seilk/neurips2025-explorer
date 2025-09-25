@@ -2,6 +2,7 @@
 
 import { Fragment, FormEvent, useEffect, useMemo, useState } from "react";
 import { Icon } from "@iconify/react";
+import { Listbox, Transition } from "@headlessui/react";
 import type { ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkMath from "remark-math";
@@ -44,20 +45,20 @@ export type PaperRecord = Record<string, unknown> & { id: number };
 
 type FilterMap = { [field: string]: string[] };
 
-type FilterSectionProps = {
-  field: string;
-  label: string;
-  options: string[];
-  selected: string[];
-  onToggle: (value: string) => void;
-};
-
 type PaperCardProps = {
   paper: PaperRecord;
   tokens: string[];
 };
 
 const QUICK_FILTER_FIELDS = ["decision", "event_type", "topic"];
+
+type QuickFilterDropdownProps = {
+  field: string;
+  label: string;
+  options: string[];
+  selected: string[];
+  onChange: (values: string[]) => void;
+};
 
 const friendlyFieldName = (name: string) =>
   name
@@ -307,47 +308,51 @@ function renderValueWithHighlight(value: unknown, tokens: string[]): ReactNode {
   return renderHighlightedText(String(value), tokens);
 }
 
-function FilterSection({ field, label, options, selected, onToggle }: FilterSectionProps) {
-  const [term, setTerm] = useState("");
-
-  const filtered = useMemo(() => {
-    if (!term) {
-      return options;
-    }
-    const lowered = term.toLowerCase();
-    return options.filter((option) => option.toLowerCase().includes(lowered));
-  }, [options, term]);
+function QuickFilterDropdown({ field, label, options, selected, onChange }: QuickFilterDropdownProps) {
+  const summary = selected.length > 0 ? `${selected.length} selected` : "All";
 
   return (
-    <div className={styles.filterGroup}>
+    <div className={styles.dropdownGroup}>
       <p className={styles.sectionTitle}>{label}</p>
-      {options.length > 6 && (
-        <input
-          className={styles.filterSearch}
-          placeholder={`Search ${label}`}
-          value={term}
-          onChange={(event) => setTerm(event.target.value)}
-        />
-      )}
-      <div className={styles.checkboxList}>
-        {filtered.length === 0 ? (
-          <span className={styles.summaryText}>No matching options.</span>
-        ) : (
-          filtered.map((option) => {
-            const checked = selected.includes(option);
-            return (
-              <label key={`${field}-${option}`} className={styles.checkboxItem}>
-                <input
-                  type="checkbox"
-                  checked={checked}
-                  onChange={() => onToggle(option)}
-                />
-                <span>{option}</span>
-              </label>
-            );
-          })
-        )}
-      </div>
+      <Listbox value={selected} onChange={onChange} multiple>
+        <div className={styles.dropdownContainer}>
+          <Listbox.Button className={styles.dropdownButton}>
+            <span className={styles.dropdownButtonLabel}>{summary}</span>
+            <Icon icon="mdi:chevron-down" fontSize={18} />
+          </Listbox.Button>
+          <Transition
+            as={Fragment}
+            leave="transition ease-in duration-100"
+            leaveFrom="opacity-100"
+            leaveTo="opacity-0"
+          >
+            <Listbox.Options className={styles.dropdownOptions}>
+              {options.length === 0 ? (
+                <div className={styles.dropdownEmpty}>No options</div>
+              ) : (
+                options.map((option) => (
+                  <Listbox.Option
+                    key={`${field}-${option}`}
+                    value={option}
+                    className={({ active }) =>
+                      [styles.dropdownOption, active ? styles.dropdownOptionActive : null]
+                        .filter(Boolean)
+                        .join(" ")
+                    }
+                  >
+                    {({ selected: isSelected }) => (
+                      <>
+                        <span>{option}</span>
+                        {isSelected && <Icon icon="mdi:check" fontSize={18} />}
+                      </>
+                    )}
+                  </Listbox.Option>
+                ))
+              )}
+            </Listbox.Options>
+          </Transition>
+        </div>
+      </Listbox>
     </div>
   );
 }
@@ -451,8 +456,6 @@ export default function Home() {
   const sortOrder: "asc" | "desc" = "asc";
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [customField, setCustomField] = useState<string>("");
-  const [customValue, setCustomValue] = useState<string>("");
 
   const scrollToTop = () => {
     if (typeof window === "undefined") {
@@ -481,16 +484,12 @@ export default function Home() {
         }
         const payload: SchemaResponse = await response.json();
         setSchema(payload);
-        if (!customField && payload.fields.length > 0) {
-          setCustomField(payload.fields[0].name);
-        }
       } catch (err) {
         const message = err instanceof Error ? err.message : "An unexpected issue occurred while loading the schema.";
         setSchemaError(message);
       }
     };
     loadSchema();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -574,20 +573,17 @@ export default function Home() {
     setPage(1);
   };
 
-  const toggleFilter = (field: string, value: string) => {
+  const setFilterValues = (field: string, values: string[]) => {
     setFilters((previous) => {
-      const currentValues = previous[field] ?? [];
-      const exists = currentValues.includes(value);
-      if (exists) {
-        const filteredValues = currentValues.filter((item) => item !== value);
-        const updated = { ...previous };
-        if (filteredValues.length === 0) {
-          delete updated[field];
-          return updated;
-        }
-        return { ...updated, [field]: filteredValues };
+      const cleaned = values
+        .map((value) => value.trim())
+        .filter((value) => value.length > 0);
+      if (cleaned.length === 0) {
+        const rest = { ...previous };
+        delete rest[field];
+        return rest;
       }
-      return { ...previous, [field]: [...currentValues, value] };
+      return { ...previous, [field]: cleaned };
     });
     setPage(1);
   };
@@ -612,22 +608,6 @@ export default function Home() {
 
   const clearFilters = () => {
     setFilters({});
-    setPage(1);
-  };
-
-  const handleAddCustomFilter = () => {
-    if (!customField || !customValue.trim()) {
-      return;
-    }
-    const value = customValue.trim();
-    setFilters((previous) => {
-      const existing = previous[customField] ?? [];
-      if (existing.includes(value)) {
-        return previous;
-      }
-      return { ...previous, [customField]: [...existing, value] };
-    });
-    setCustomValue("");
     setPage(1);
   };
 
@@ -661,56 +641,30 @@ export default function Home() {
                 <p className={styles.summaryText}>No recommended filters are available.</p>
               )}
               {quickFilters.map((field) => (
-                <FilterSection
+                <QuickFilterDropdown
                   key={field}
                   field={field}
                   label={friendlyFieldName(field)}
                   options={schema?.facets?.[field] ?? []}
                   selected={filters[field] ?? []}
-                  onToggle={(value) => toggleFilter(field, value)}
+                  onChange={(values) => setFilterValues(field, values)}
                 />
               ))}
               <button className={styles.clearButton} onClick={clearFilters} type="button">
                 Clear all filters
               </button>
-            </div>
-
-            <div className={styles.panel}>
-              <h2 className={styles.panelTitle}>Custom filters</h2>
-              <p className={styles.summaryText}>
-                Pick any field and provide a value (or partial keyword) to narrow the results. Adding multiple values to the same field uses OR semantics.
-              </p>
-              <div className={styles.customFilterForm}>
-                <div className={styles.customFilterRow}>
-                  <select value={customField} onChange={(event) => setCustomField(event.target.value)}>
-                    {schema?.fields.map((field) => (
-                      <option key={field.name} value={field.name}>
-                        {friendlyFieldName(field.name)}
-                      </option>
-                    ))}
-                  </select>
-                  <input
-                    value={customValue}
-                    onChange={(event) => setCustomValue(event.target.value)}
-                    placeholder="Enter a value"
-                  />
-                  <button type="button" onClick={handleAddCustomFilter}>
-                    Add
-                  </button>
+              {activeFilters.length > 0 && (
+                <div className={styles.activeFilters}>
+                  {activeFilters.map((item) => (
+                    <span key={`${item.field}-${item.value}`} className={styles.chip}>
+                      {friendlyFieldName(item.field)}: {item.value}
+                      <button type="button" onClick={() => removeFilter(item.field, item.value)}>
+                        ×
+                      </button>
+                    </span>
+                  ))}
                 </div>
-                {activeFilters.length > 0 && (
-                  <div className={styles.activeFilters}>
-                    {activeFilters.map((item) => (
-                      <span key={`${item.field}-${item.value}`} className={styles.chip}>
-                        {friendlyFieldName(item.field)}: {item.value}
-                        <button type="button" onClick={() => removeFilter(item.field, item.value)}>
-                          ×
-                        </button>
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </div>
+              )}
             </div>
           </aside>
 
@@ -760,6 +714,14 @@ export default function Home() {
           </section>
         </section>
       </div>
+      <button
+        type="button"
+        className={styles.floatingTopButton}
+        onClick={scrollToTop}
+        aria-label="Go to top"
+      >
+        <Icon icon="mdi:arrow-up" fontSize={22} />
+      </button>
     </div>
   );
 }

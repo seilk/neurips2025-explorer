@@ -71,6 +71,16 @@
   box-shadow: 0 15px 30px rgba(37, 99, 235, 0.25);
 }
 
+@media (max-width: 640px) {
+  .searchBar form {
+    flex-direction: column;
+  }
+
+  .searchButton {
+    width: 100%;
+  }
+}
+
 .mainContent {
   display: grid;
   gap: 24px;
@@ -117,41 +127,6 @@
   color: var(--color-text);
 }
 
-.filterGroup {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.checkboxList {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  max-height: 200px;
-  overflow-y: auto;
-  padding-right: 4px;
-}
-
-.checkboxItem {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  font-size: 0.95rem;
-  color: var(--color-subdued);
-}
-
-.checkboxItem input {
-  width: 16px;
-  height: 16px;
-}
-
-.filterSearch {
-  padding: 8px 10px;
-  border-radius: 8px;
-  border: 1px solid var(--color-border);
-  font-size: 0.9rem;
-}
-
 .activeFilters {
   display: flex;
   flex-wrap: wrap;
@@ -175,6 +150,75 @@
   color: inherit;
   cursor: pointer;
   font-size: 0.85rem;
+}
+
+.dropdownGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dropdownContainer {
+  position: relative;
+}
+
+.dropdownButton {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: 10px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  font-size: 0.95rem;
+  color: var(--color-text);
+  box-shadow: var(--shadow-soft);
+  cursor: pointer;
+}
+
+.dropdownButtonLabel {
+  flex: 1;
+  text-align: left;
+}
+
+.dropdownOptions {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  max-height: 260px;
+  overflow-y: auto;
+  background: var(--color-surface);
+  border-radius: 12px;
+  border: 1px solid var(--color-border);
+  box-shadow: 0 18px 35px rgba(15, 23, 42, 0.18);
+  padding: 6px;
+  z-index: 30;
+}
+
+.dropdownOption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  color: var(--color-text);
+}
+
+.dropdownOptionActive {
+  background: rgba(37, 99, 235, 0.1);
+  color: var(--color-primary);
+}
+
+.dropdownEmpty {
+  padding: 12px;
+  text-align: center;
+  color: var(--color-subdued);
+  font-size: 0.9rem;
 }
 
 .highlight {
@@ -334,38 +378,6 @@
   font-weight: 600;
 }
 
-.customFilterForm {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.customFilterRow {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  align-items: stretch;
-}
-
-.customFilterRow select,
-.customFilterRow input {
-  width: 100%;
-  padding: 8px 10px;
-  border-radius: 8px;
-  border: 1px solid var(--color-border);
-  font-size: 0.9rem;
-}
-
-.customFilterRow button {
-  width: 100%;
-  padding: 10px 14px;
-  border-radius: 8px;
-  border: none;
-  background: var(--color-primary);
-  color: #fff;
-  cursor: pointer;
-}
-
 .clearButton {
   padding: 8px 12px;
   border-radius: 8px;
@@ -375,20 +387,39 @@
   cursor: pointer;
 }
 
-.scrollTopButton {
-  align-self: flex-end;
-  padding: 10px 16px;
-  border-radius: 999px;
+.floatingTopButton {
+  position: fixed;
+  bottom: 32px;
+  right: 32px;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
   border: none;
-  background: var(--color-primary);
+  background: linear-gradient(135deg, var(--color-primary), #5585ff);
   color: #fff;
-  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 18px 35px rgba(37, 99, 235, 0.35);
   cursor: pointer;
-  box-shadow: var(--shadow-soft);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  z-index: 40;
 }
 
-.scrollTopButton:hover {
-  filter: brightness(1.05);
+.floatingTopButton:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 24px 40px rgba(37, 99, 235, 0.4);
+}
+
+.floatingTopButton:active {
+  transform: scale(0.96);
+}
+
+@media (max-width: 640px) {
+  .floatingTopButton {
+    bottom: 20px;
+    right: 20px;
+  }
 }
 
 .empty {

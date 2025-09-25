@@ -9,6 +9,7 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@headlessui/react": "^2.2.8",
     "@iconify/react": "^6.0.2",
     "katex": "^0.16.22",
     "next": "15.5.3",
