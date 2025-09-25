@@ -1,0 +1,18 @@
+.README.md
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.db-journal
+*.db-shm
+*.db-wal
+
+# Node
+node_modules/
+.npm/
+.next/
+frontend/.next/
+frontend/out/
+
+# macOS
+.DS_Store

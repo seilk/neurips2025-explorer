@@ -1,0 +1,825 @@
+"use client";
+
+import { Fragment, FormEvent, useEffect, useMemo, useState } from "react";
+import type { ReactNode } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
+import { visit, SKIP } from "unist-util-visit";
+import type { PluggableList, Plugin } from "unified";
+import type { Root, Element, Text } from "hast";
+import type { Parent } from "unist";
+import styles from "./page.module.css";
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
+
+interface SchemaField {
+  name: string;
+  type: string;
+}
+
+interface SchemaResponse {
+  fields: SchemaField[];
+  facets: Record<string, string[]>;
+}
+
+interface SearchPayload {
+  query?: string;
+  filters?: Record<string, string[]>;
+  page: number;
+  page_size: number;
+  sort_by?: string;
+  sort_order?: string;
+}
+
+interface SearchResponse {
+  total: number;
+  page: number;
+  page_size: number;
+  results: PaperRecord[];
+}
+
+export type PaperRecord = Record<string, unknown> & { id: number };
+
+type FilterMap = { [field: string]: string[] };
+
+type FilterSectionProps = {
+  field: string;
+  label: string;
+  options: string[];
+  selected: string[];
+  onToggle: (value: string) => void;
+};
+
+type PaperCardProps = {
+  paper: PaperRecord;
+  tokens: string[];
+};
+
+const QUICK_FILTER_FIELDS = ["decision", "event_type", "topic"];
+const PAGE_SIZE_OPTIONS = [10, 20, 40, 100];
+const SORT_OPTIONS = [
+  { value: "name", label: "Title" },
+  { value: "decision", label: "Decision" },
+  { value: "event_type", label: "Event Type" },
+  { value: "session", label: "Session" },
+  { value: "topic", label: "Topic" },
+];
+
+const friendlyFieldName = (name: string) =>
+  name
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+
+const escapeRegExp = (value: string) => value.replace(/[-/\\^$*+?.()|[\]{}]/g, "\\$&");
+
+const decodeHtmlEntities = (value: string): string =>
+  value
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'");
+
+const formatValue = (value: unknown): string => {
+  if (value === null || value === undefined) {
+    return "-";
+  }
+  if (Array.isArray(value)) {
+    if (value.length === 0) {
+      return "-";
+    }
+    return value
+      .map((item) => (typeof item === "string" ? item : JSON.stringify(item)))
+      .join(", ");
+  }
+  if (typeof value === "object") {
+    return JSON.stringify(value, null, 2);
+  }
+  return String(value);
+};
+
+function MarkdownBlock({ text, tokens }: { text: string; tokens: string[] }) {
+  const normalised = useMemo(() => text.replace(/\r\n/g, "\n").trim(), [text]);
+  const highlightPlugin = useMemo(() => createHighlightRehype(tokens, styles.highlight), [tokens]);
+  const rehypePlugins = useMemo<PluggableList>(() => {
+    const plugins: PluggableList = [rehypeKatex];
+    if (highlightPlugin) {
+      plugins.push(highlightPlugin);
+    }
+    return plugins;
+  }, [highlightPlugin]);
+  if (!normalised) {
+    return null;
+  }
+  return (
+    <div className={styles.markdown}>
+      <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={rehypePlugins}>
+        {normalised}
+      </ReactMarkdown>
+    </div>
+  );
+}
+
+function MarkdownInline({ text, tokens }: { text: string; tokens: string[] }) {
+  const normalised = useMemo(() => text.trim(), [text]);
+  const highlightPlugin = useMemo(() => createHighlightRehype(tokens, styles.highlight), [tokens]);
+  const rehypePlugins = useMemo<PluggableList>(() => {
+    const plugins: PluggableList = [rehypeKatex];
+    if (highlightPlugin) {
+      plugins.push(highlightPlugin);
+    }
+    return plugins;
+  }, [highlightPlugin]);
+  if (!normalised) {
+    return null;
+  }
+  return (
+    <ReactMarkdown
+      remarkPlugins={[remarkMath]}
+      rehypePlugins={rehypePlugins}
+      components={{
+        p: ({ children }) => <>{children}</>,
+      }}
+    >
+      {normalised}
+    </ReactMarkdown>
+  );
+}
+
+function formatAuthorsList(authorsValue: unknown): string {
+  if (Array.isArray(authorsValue)) {
+    const names = (authorsValue as unknown[])
+      .map((entry) => {
+        if (typeof entry === "string") {
+          return entry;
+        }
+        if (entry && typeof entry === "object") {
+          const candidate = entry as Record<string, unknown>;
+          if (typeof candidate.fullname === "string") {
+            return candidate.fullname;
+          }
+          if (typeof candidate.name === "string") {
+            return candidate.name;
+          }
+          if (typeof candidate.display_name === "string") {
+            return candidate.display_name;
+          }
+        }
+        return null;
+      })
+      .filter((value): value is string => Boolean(value && value.trim().length > 0));
+    if (names.length > 0) {
+      return names.join(", ");
+    }
+  }
+  return formatValue(authorsValue);
+}
+
+function formatInstitutionsList(authorsValue: unknown): string {
+  if (Array.isArray(authorsValue)) {
+    const institutions = (authorsValue as unknown[])
+      .map((entry) => {
+        if (entry && typeof entry === "object") {
+          const candidate = entry as Record<string, unknown>;
+          if (typeof candidate.institution === "string") {
+            return decodeHtmlEntities(candidate.institution);
+          }
+          if (Array.isArray(candidate.institution)) {
+            return (candidate.institution as unknown[])
+              .map((item) => (typeof item === "string" ? decodeHtmlEntities(item) : null))
+              .filter((value): value is string => Boolean(value && value.trim().length > 0))
+              .join(", ");
+          }
+        }
+        return null;
+      })
+      .filter((value): value is string => Boolean(value && value.trim().length > 0));
+    if (institutions.length > 0) {
+      const unique = Array.from(new Set(institutions.map((name) => name.trim()).filter(Boolean)));
+      return unique.join(", ");
+    }
+  }
+  return "";
+}
+
+function createHighlightRehype(tokens: string[], className: string): Plugin | null {
+  const candidates = tokens.filter((token) => token.trim().length > 0);
+  if (candidates.length === 0) {
+    return null;
+  }
+  const pattern = new RegExp(`(${candidates.map(escapeRegExp).join("|")})`, "gi");
+
+  const plugin = (() => (tree: Root) => {
+    visit(tree, "text", (node: Text, index: number | undefined, parent: Parent | undefined) => {
+      if (!parent || typeof node.value !== "string" || typeof index !== "number") {
+        return;
+      }
+      const parentNode = parent as Parent & Partial<Element>;
+      if (parentNode.type === "element" && parentNode.properties) {
+        const classProp = parentNode.properties?.className;
+        const classList = Array.isArray(classProp)
+          ? classProp
+          : typeof classProp === "string"
+          ? classProp.split(/\s+/)
+          : [];
+        if (classList.some((cls) => typeof cls === "string" && cls.includes("katex"))) {
+          return;
+        }
+      }
+
+      if (parentNode.type === "element" && parentNode.tagName === "script") {
+        return;
+      }
+
+      const parts = node.value.split(pattern);
+      if (parts.length <= 1) {
+        return;
+      }
+
+      const newNodes = parts
+        .map((part, idx) => {
+          if (!part) {
+            return null;
+          }
+          if (idx % 2 === 1) {
+            return {
+              type: "element",
+              tagName: "span",
+              properties: { className: [className] },
+              children: [{ type: "text", value: part }],
+            };
+          }
+          return { type: "text", value: part };
+        })
+        .filter(Boolean);
+
+      if (!newNodes.length) {
+        return;
+      }
+
+      parentNode.children?.splice(index, 1, ...(newNodes as Parent["children"]));
+      return SKIP;
+    });
+  }) as unknown as Plugin;
+
+  return plugin;
+}
+
+function renderHighlightedText(text: string, tokens: string[]): ReactNode {
+  if (!text) {
+    return text;
+  }
+  const candidates = tokens.filter((token) => token.trim().length > 0);
+  if (candidates.length === 0) {
+    return text;
+  }
+  const regex = new RegExp(`(${candidates.map(escapeRegExp).join("|")})`, "gi");
+  const parts = text.split(regex);
+  if (parts.length <= 1) {
+    return text;
+  }
+  return parts.map((part, idx) => {
+    if (!part) {
+      return null;
+    }
+    if (idx % 2 === 1) {
+      return (
+        <span key={idx} className={styles.highlight}>
+          {part}
+        </span>
+      );
+    }
+    return <Fragment key={idx}>{part}</Fragment>;
+  });
+}
+
+function renderValueWithHighlight(value: unknown, tokens: string[]): ReactNode {
+  if (value === null || value === undefined) {
+    return "-";
+  }
+  if (Array.isArray(value)) {
+    const joined = value
+      .map((item) => (typeof item === "string" ? item : JSON.stringify(item)))
+      .filter((item) => item && item.length > 0)
+      .join(", ");
+    if (!joined) {
+      return "-";
+    }
+    return renderHighlightedText(joined, tokens);
+  }
+  if (typeof value === "object") {
+    return JSON.stringify(value, null, 2);
+  }
+  return renderHighlightedText(String(value), tokens);
+}
+
+function FilterSection({ field, label, options, selected, onToggle }: FilterSectionProps) {
+  const [term, setTerm] = useState("");
+
+  const filtered = useMemo(() => {
+    if (!term) {
+      return options;
+    }
+    const lowered = term.toLowerCase();
+    return options.filter((option) => option.toLowerCase().includes(lowered));
+  }, [options, term]);
+
+  return (
+    <div className={styles.filterGroup}>
+      <p className={styles.sectionTitle}>{label}</p>
+      {options.length > 6 && (
+        <input
+          className={styles.filterSearch}
+          placeholder={`Search ${label}`}
+          value={term}
+          onChange={(event) => setTerm(event.target.value)}
+        />
+      )}
+      <div className={styles.checkboxList}>
+        {filtered.length === 0 ? (
+          <span className={styles.summaryText}>No matching options.</span>
+        ) : (
+          filtered.map((option) => {
+            const checked = selected.includes(option);
+            return (
+              <label key={`${field}-${option}`} className={styles.checkboxItem}>
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={() => onToggle(option)}
+                />
+                <span>{option}</span>
+              </label>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+}
+
+function PaperCard({ paper, tokens }: PaperCardProps) {
+  const titleRaw = paper["name"];
+  const abstractRaw = paper["abstract"];
+  const authorsRaw = paper["authors"];
+  const keywordsRaw = paper["keywords"];
+  const eventTypeRaw = paper["event_type"] ?? paper["eventtype"];
+
+  const title = typeof titleRaw === "string" ? titleRaw : "Title unavailable";
+  const abstractText = abstractRaw ? String(abstractRaw) : "";
+  const authors = formatAuthorsList(authorsRaw);
+  const institutions = formatInstitutionsList(authorsRaw);
+  const keywords = Array.isArray(keywordsRaw)
+    ? (keywordsRaw as unknown[]).map((value) => String(value))
+    : [];
+  const metadata = [
+    { label: "Decision", value: paper["decision"] },
+    { label: "Event Type", value: eventTypeRaw },
+    { label: "Session", value: paper["session"] },
+    { label: "Topic", value: paper["topic"] },
+    { label: "Poster Position", value: paper["poster_position"] },
+  ].filter((item) => item.value !== undefined && item.value !== null && item.value !== "");
+
+  const externalLinks = [
+    { label: "OpenReview", url: typeof paper["paper_url"] === "string" ? (paper["paper_url"] as string) : undefined },
+    {
+      label: "Virtual Event Page",
+      url: typeof paper["virtualsite_url"] === "string" ? `https://neurips.cc${paper["virtualsite_url"]}` : undefined,
+    },
+    { label: "Source", url: typeof paper["sourceurl"] === "string" ? (paper["sourceurl"] as string) : undefined },
+  ].filter((link) => link.url);
+
+  return (
+    <article className={styles.card}>
+      <header>
+        <h3 className={styles.cardTitle}>
+          <MarkdownInline text={title} tokens={tokens} />
+        </h3>
+        <p className={styles.cardMeta}>
+          <span className={styles.metaItem}>
+            <span>Authors:</span> {renderHighlightedText(authors || "Unknown", tokens)}
+          </span>
+          {institutions && (
+            <span className={styles.metaItem}>
+              <span>Institutions:</span> {renderHighlightedText(institutions, tokens)}
+            </span>
+          )}
+        </p>
+      </header>
+      {abstractText && (
+        <details className={styles.abstractToggle}>
+          <summary>Show abstract</summary>
+          <MarkdownBlock text={abstractText} tokens={tokens} />
+        </details>
+      )}
+      {metadata.length > 0 && (
+        <div className={styles.cardMeta}>
+          {metadata.map((item) => (
+            <span key={item.label} className={styles.metaItem}>
+              <span>{item.label}:</span> {renderValueWithHighlight(item.value, tokens)}
+            </span>
+          ))}
+        </div>
+      )}
+      {keywords.length > 0 && (
+        <div className={styles.tags}>
+          {keywords.map((keyword) => (
+            <span key={keyword} className={styles.tag}>
+              {renderHighlightedText(keyword, tokens)}
+            </span>
+          ))}
+        </div>
+      )}
+      {externalLinks.length > 0 && (
+        <div className={styles.links}>
+          {externalLinks.map((link) => (
+            <a key={link.label} href={link.url} target="_blank" rel="noreferrer">
+              {link.label}
+            </a>
+          ))}
+        </div>
+      )}
+    </article>
+  );
+}
+
+export default function Home() {
+  const [schema, setSchema] = useState<SchemaResponse | null>(null);
+  const [schemaError, setSchemaError] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [query, setQuery] = useState("");
+  const [filters, setFilters] = useState<FilterMap>({});
+  const [results, setResults] = useState<PaperRecord[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  const [sortBy, setSortBy] = useState<string>("name");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [customField, setCustomField] = useState<string>("");
+  const [customValue, setCustomValue] = useState<string>("");
+
+  const scrollToTop = () => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const highlightTokens = useMemo(() => {
+    if (!query) {
+      return [] as string[];
+    }
+    const rawTokens = query
+      .split(/\s+/)
+      .map((token) => token.trim().toLowerCase())
+      .filter((token) => token.length > 0);
+    return Array.from(new Set(rawTokens));
+  }, [query]);
+
+  useEffect(() => {
+    const loadSchema = async () => {
+      try {
+        const response = await fetch(`${API_BASE_URL}/papers/schema`);
+        if (!response.ok) {
+          throw new Error(`Failed to load schema. (HTTP ${response.status})`);
+        }
+        const payload: SchemaResponse = await response.json();
+        setSchema(payload);
+        if (!customField && payload.fields.length > 0) {
+          setCustomField(payload.fields[0].name);
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "An unexpected issue occurred while loading the schema.";
+        setSchemaError(message);
+      }
+    };
+    loadSchema();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setQuery(searchTerm.trim());
+      setPage(1);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const runSearch = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const payload: SearchPayload = {
+          page,
+          page_size: pageSize,
+          sort_by: sortBy,
+          sort_order: sortOrder,
+        };
+        if (query) {
+          payload.query = query;
+        }
+        if (Object.keys(filters).length > 0) {
+          payload.filters = filters;
+        }
+        const response = await fetch(`${API_BASE_URL}/papers/search`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+          signal: controller.signal,
+        });
+        if (!response.ok) {
+          throw new Error(`Search request failed. (HTTP ${response.status})`);
+        }
+        const data: SearchResponse = await response.json();
+        const totalPages = Math.max(1, Math.ceil(data.total / pageSize));
+        if (page > totalPages && data.total > 0) {
+          setPage(totalPages);
+          return;
+        }
+        setResults(data.results);
+        setTotal(data.total);
+      } catch (err) {
+        if ((err as Error).name === "AbortError") {
+          return;
+        }
+        const message = err instanceof Error ? err.message : "Something went wrong during the search.";
+        setError(message);
+        setResults([]);
+        setTotal(0);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    runSearch();
+    return () => controller.abort();
+  }, [query, filters, page, pageSize, sortBy, sortOrder]);
+
+  const quickFilters = useMemo(() => {
+    if (!schema) {
+      return [] as string[];
+    }
+    return QUICK_FILTER_FIELDS.filter((field) => field in schema.facets);
+  }, [schema]);
+
+  const activeFilters = useMemo(() => {
+    return Object.entries(filters).flatMap(([field, values]) =>
+      values.map((value) => ({ field, value }))
+    );
+  }, [filters]);
+
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+
+  const handleSubmit = (event: FormEvent) => {
+    event.preventDefault();
+    setQuery(searchTerm.trim());
+    setPage(1);
+  };
+
+  const toggleFilter = (field: string, value: string) => {
+    setFilters((previous) => {
+      const currentValues = previous[field] ?? [];
+      const exists = currentValues.includes(value);
+      if (exists) {
+        const filteredValues = currentValues.filter((item) => item !== value);
+        const updated = { ...previous };
+        if (filteredValues.length === 0) {
+          delete updated[field];
+          return updated;
+        }
+        return { ...updated, [field]: filteredValues };
+      }
+      return { ...previous, [field]: [...currentValues, value] };
+    });
+    setPage(1);
+  };
+
+  const removeFilter = (field: string, value?: string) => {
+    setFilters((previous) => {
+      const updated = { ...previous };
+      if (value === undefined) {
+        delete updated[field];
+        return updated;
+      }
+      const currentValues = previous[field] ?? [];
+      const nextValues = currentValues.filter((item) => item !== value);
+      if (nextValues.length === 0) {
+        delete updated[field];
+        return updated;
+      }
+      return { ...updated, [field]: nextValues };
+    });
+    setPage(1);
+  };
+
+  const clearFilters = () => {
+    setFilters({});
+    setPage(1);
+  };
+
+  const handleAddCustomFilter = () => {
+    if (!customField || !customValue.trim()) {
+      return;
+    }
+    const value = customValue.trim();
+    setFilters((previous) => {
+      const existing = previous[customField] ?? [];
+      if (existing.includes(value)) {
+        return previous;
+      }
+      return { ...previous, [customField]: [...existing, value] };
+    });
+    setCustomValue("");
+    setPage(1);
+  };
+
+  return (
+    <div className={styles.page}>
+      <div className={styles.container}>
+        <header className={styles.header}>
+          <h1 className={styles.title}>NeurIPS 2025 Papers Explorer</h1>
+          <p className={styles.subtitle}>Browse 5,871 accepted papers.</p>
+          <section className={styles.searchBar}>
+            <form onSubmit={handleSubmit}>
+              <input
+                className={styles.searchInput}
+                value={searchTerm}
+                onChange={(event) => setSearchTerm(event.target.value)}
+                placeholder="Search title, authors, abstract, keywords, or any keyword you like"
+              />
+              <div className={styles.searchExtras}>
+                <label>
+                  Results per page
+                  <select
+                    value={pageSize}
+                    onChange={(event) => {
+                      setPageSize(Number(event.target.value));
+                      setPage(1);
+                    }}
+                  >
+                    {PAGE_SIZE_OPTIONS.map((size) => (
+                      <option key={size} value={size}>
+                        {size}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Sort field
+                  <select
+                    value={sortBy}
+                    onChange={(event) => {
+                      setSortBy(event.target.value);
+                      setPage(1);
+                    }}
+                  >
+                    {SORT_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                    {schema?.fields
+                      .filter((field) => !SORT_OPTIONS.find((option) => option.value === field.name))
+                      .map((field) => (
+                        <option key={field.name} value={field.name}>
+                          {friendlyFieldName(field.name)}
+                        </option>
+                      ))}
+                  </select>
+                </label>
+                <label>
+                  Sort order
+                  <select
+                    value={sortOrder}
+                    onChange={(event) => {
+                      const candidate = event.target.value === "desc" ? "desc" : "asc";
+                      setSortOrder(candidate);
+                      setPage(1);
+                    }}
+                  >
+                    <option value="asc">Ascending</option>
+                    <option value="desc">Descending</option>
+                  </select>
+                </label>
+                <button type="submit">Search now</button>
+              </div>
+            </form>
+            {schemaError && <div className={styles.error}>{schemaError}</div>}
+          </section>
+        </header>
+
+        <section className={styles.mainContent}>
+          <aside className={styles.sidebar}>
+            <div className={styles.panel}>
+              <h2 className={styles.panelTitle}>Quick filters</h2>
+              {quickFilters.length === 0 && (
+                <p className={styles.summaryText}>No recommended filters are available.</p>
+              )}
+              {quickFilters.map((field) => (
+                <FilterSection
+                  key={field}
+                  field={field}
+                  label={friendlyFieldName(field)}
+                  options={schema?.facets?.[field] ?? []}
+                  selected={filters[field] ?? []}
+                  onToggle={(value) => toggleFilter(field, value)}
+                />
+              ))}
+              <button className={styles.clearButton} onClick={clearFilters} type="button">
+                Clear all filters
+              </button>
+            </div>
+
+            <div className={styles.panel}>
+              <h2 className={styles.panelTitle}>Custom filters</h2>
+              <p className={styles.summaryText}>
+                Pick any field and provide a value (or partial keyword) to narrow the results. Adding multiple values to the same field uses OR semantics.
+              </p>
+              <div className={styles.customFilterForm}>
+                <div className={styles.customFilterRow}>
+                  <select value={customField} onChange={(event) => setCustomField(event.target.value)}>
+                    {schema?.fields.map((field) => (
+                      <option key={field.name} value={field.name}>
+                        {friendlyFieldName(field.name)}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    value={customValue}
+                    onChange={(event) => setCustomValue(event.target.value)}
+                    placeholder="Enter a value"
+                  />
+                  <button type="button" onClick={handleAddCustomFilter}>
+                    Add
+                  </button>
+                </div>
+                {activeFilters.length > 0 && (
+                  <div className={styles.activeFilters}>
+                    {activeFilters.map((item) => (
+                      <span key={`${item.field}-${item.value}`} className={styles.chip}>
+                        {friendlyFieldName(item.field)}: {item.value}
+                        <button type="button" onClick={() => removeFilter(item.field, item.value)}>
+                          ×
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </aside>
+
+          <section className={styles.results}>
+            <div className={styles.summaryBar}>
+              <p className={styles.summaryText}>
+                Showing {total === 0 ? 0 : (page - 1) * pageSize + 1}-{Math.min(page * pageSize, total)} of {total.toLocaleString()} results.
+              </p>
+              <div className={`${styles.pagination} ${styles.summaryText}`}>
+                <div className={styles.paginationControls}>
+                  <button
+                    type="button"
+                    onClick={() => setPage((current) => Math.max(1, current - 1))}
+                    disabled={page === 1 || loading}
+                  >
+                    Previous
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+                    disabled={page >= totalPages || loading}
+                  >
+                    Next
+                  </button>
+                </div>
+                <span>
+                  Page {page} of {totalPages}
+                </span>
+              </div>
+            </div>
+
+            {loading && <div className={styles.summaryText}>Searching…</div>}
+            {error && <div className={styles.error}>{error}</div>}
+
+            {!loading && !error && results.length === 0 && (
+              <div className={styles.empty}>No papers match your filters. Try adjusting the search or filter set.</div>
+            )}
+
+            {results.map((paper) => (
+              <PaperCard key={String(paper.id)} paper={paper} tokens={highlightTokens} />
+            ))}
+            {results.length > 0 && (
+              <button type="button" onClick={scrollToTop} className={styles.scrollTopButton}>
+                Go to top
+              </button>
+            )}
+          </section>
+        </section>
+      </div>
+    </div>
+  );
+}
