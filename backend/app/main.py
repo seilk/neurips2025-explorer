@@ -58,17 +58,10 @@ def lookup_arxiv_url(title: str, author_initial: str, author_last: str) -> str |
     if not cleaned_title:
         return None
 
-    author_initial_clean = author_initial.strip()
     author_last_clean = author_last.strip()
-    expected_author = (
-        f"{author_initial_clean[:1].lower()} {author_last_clean.lower()}"
-        if author_initial_clean and author_last_clean
-        else ""
-    )
-
     query_parts = [cleaned_title]
-    if author_initial_clean and author_last_clean:
-        query_parts.append(f"intext: {author_initial_clean[:1]} {author_last_clean}")
+    if author_last_clean:
+        query_parts.append(f"intext: {author_last_clean}")
     query = quote_plus(" ".join(query_parts))
     search_url = f"https://www.google.com/search?q={query}&hl=en"
     try:
@@ -95,7 +88,8 @@ def lookup_arxiv_url(title: str, author_initial: str, author_last: str) -> str |
 
     if href.startswith("/url?"):
         parsed = urlparse(href)
-        target = parse_qs(parsed.query).get("q", [href])[0]
+        qs = parse_qs(parsed.query)
+        target = qs.get("q", qs.get("url", [href]))[0]
     else:
         target = href
 
