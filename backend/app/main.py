@@ -256,6 +256,7 @@ def search_papers(payload: SearchRequest, store: PaperStore = Depends(get_store)
         page_size=payload.page_size,
         sort_by=payload.sort_by,
         sort_order=payload.sort_order,
+        seed=payload.seed,
     )
     return SearchResponse(total=total, page=payload.page, page_size=payload.page_size, results=results)
 

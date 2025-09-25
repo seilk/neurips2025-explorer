@@ -155,6 +155,7 @@ class PaperStore:
         page_size: int,
         sort_by: str | None,
         sort_order: str | None,
+        seed: str | None = None,
     ) -> Tuple[int, List[Dict[str, Any]]]:
         filters_norm = normalise_filters(filters)
 
@@ -169,7 +170,20 @@ class PaperStore:
 
         matched_records = [record for record in candidate_records if record_matches_filters(record, filters_norm)]
 
-        if sort_by:
+        if sort_by == "random":
+            # Stable, seedable random ordering across pages using a deterministic hash
+            import hashlib
+
+            s = seed or "0"
+
+            def rand_key(record: Dict[str, Any]) -> int:
+                rid = str(record.get("id", ""))
+                h = hashlib.sha256(f"{s}:{rid}".encode("utf-8")).digest()
+                # Use first 8 bytes as big-endian integer
+                return int.from_bytes(h[:8], "big", signed=False)
+
+            matched_records.sort(key=rand_key)
+        elif sort_by:
             descending = sort_order == "desc"
             sort_records(matched_records, sort_by, descending)
         else:

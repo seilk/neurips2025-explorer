@@ -31,6 +31,7 @@ interface SearchPayload {
   page_size: number;
   sort_by?: string;
   sort_order?: string;
+  seed?: string;
 }
 
 interface SearchResponse {
@@ -535,6 +536,7 @@ export default function Home() {
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [sortMode, setSortMode] = useState<SortMode>("random");
+  const [randomSeed, setRandomSeed] = useState<string>(() => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`);
   const [quickFiltersOpen, setQuickFiltersOpen] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -585,7 +587,10 @@ export default function Home() {
           page,
           page_size: PAGE_SIZE,
         };
-        if (sortMode === "az") {
+        if (sortMode === "random") {
+          payload.sort_by = "random";
+          payload.seed = randomSeed;
+        } else if (sortMode === "az") {
           payload.sort_by = "name";
           payload.sort_order = "asc";
         }
@@ -610,17 +615,7 @@ export default function Home() {
           setPage(totalPages);
           return;
         }
-        let processedResults = data.results;
-        if (sortMode === "random") {
-          processedResults = shuffleResults(processedResults);
-        } else if (sortMode === "az") {
-          processedResults = [...processedResults].sort((a, b) => {
-            const nameA = (a.name ?? "").toString().toLowerCase();
-            const nameB = (b.name ?? "").toString().toLowerCase();
-            return nameA.localeCompare(nameB);
-          });
-        }
-        setResults(processedResults);
+        setResults(data.results);
         setTotal(data.total);
       } catch (err) {
         if ((err as Error).name === "AbortError") {
@@ -637,7 +632,7 @@ export default function Home() {
 
     runSearch();
     return () => controller.abort();
-  }, [query, filters, page, sortMode]);
+  }, [query, filters, page, sortMode, randomSeed]);
 
   const quickFilters = useMemo(() => {
     if (!schema) {
@@ -711,6 +706,15 @@ export default function Home() {
       }
       return mode;
     });
+    setPage(1);
+  };
+
+  const handleShuffleClick = () => {
+    if (sortMode !== "random") {
+      setSortMode("random");
+    }
+    // Bump seed to reshuffle globally across pages
+    setRandomSeed(`${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`);
     setPage(1);
   };
 
@@ -812,7 +816,7 @@ export default function Home() {
                   <button
                     type="button"
                     className={sortMode === "random" ? styles.sortButtonActive : styles.sortButton}
-                    onClick={() => handleSortModeChange("random")}
+                    onClick={handleShuffleClick}
                   >
                     Shuffle
                   </button>

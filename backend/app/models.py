@@ -31,6 +31,10 @@ class SearchRequest(BaseModel):
         "asc",
         description="Sort direction: 'asc' or 'desc'",
     )
+    seed: Optional[str] = Field(
+        default=None,
+        description="Optional seed for random sorting. When sort_by='random', providing the same seed keeps order stable across pages.",
+    )
 
     @validator("query")
     def trim_query(cls, value: Optional[str]) -> Optional[str]:
