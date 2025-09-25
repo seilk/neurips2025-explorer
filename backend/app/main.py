@@ -14,6 +14,64 @@ from .search import PaperStore
 
 app = FastAPI(title="NeurIPS 2025 Papers API", version="1.0.0")
 
+NOISE_KEYWORDS = (
+    "webcache.googleusercontent.com",
+    "translate.google",
+    "/search?",
+    "tbm=",
+    "imgres",
+    "policies.google",
+    "support.google",
+)
+
+
+def _resolve_google_href(href: str) -> str:
+    href = (href or "").strip()
+    if not href:
+        return ""
+    if href.startswith("/url?"):
+        parsed = urlparse(href)
+        qs = parse_qs(parsed.query)
+        for key in ("q", "url"):
+            values = qs.get(key)
+            if values:
+                return values[0]
+        return ""
+    return href
+
+
+def _looks_like_noise(url: str) -> bool:
+    lowered = url.lower()
+    return any(token in lowered for token in NOISE_KEYWORDS)
+
+
+def _is_arxiv_abs(url: str) -> bool:
+    parsed = urlparse(url)
+    return parsed.netloc.lower() == "arxiv.org" and parsed.path.startswith("/abs/")
+
+
+def _is_arxiv_pdf(url: str) -> bool:
+    parsed = urlparse(url)
+    return parsed.netloc.lower() == "arxiv.org" and parsed.path.startswith("/pdf/")
+
+
+def _arxiv_abs_url_from_pdf(url: str) -> str | None:
+    parsed = urlparse(url)
+    if parsed.netloc.lower() != "arxiv.org":
+        return None
+    path = parsed.path
+    if not path.startswith("/pdf/"):
+        return None
+    identifier = path[len("/pdf/") :]
+    if identifier.endswith(".pdf"):
+        identifier = identifier[:-4]
+    identifier = identifier.strip("/")
+    if not identifier:
+        return None
+    new_path = f"/abs/{identifier}"
+    cleaned = parsed._replace(path=new_path, query="", fragment="")
+    return cleaned.geturl()
+
 # Enable CORS for the web frontend. Adjust the origins list when you know the
 # exact deployment domains.
 app.add_middleware(
@@ -77,26 +135,26 @@ def lookup_arxiv_url(title: str, author_initial: str, author_last: str) -> str |
         return None
 
     soup = BeautifulSoup(response.text, "html.parser")
-    first_result = soup.select_one("div.g")
-    if first_result is None:
-        return None
+    pdf_candidate: str | None = None
 
-    anchor = first_result.find("a", href=True)
-    if anchor is None:
-        return None
-    href = anchor["href"].strip()
+    for anchor in soup.find_all("a", href=True):
+        target = _resolve_google_href(anchor["href"])
+        if not target:
+            continue
+        if _looks_like_noise(target):
+            continue
+        parsed = urlparse(target)
+        if not parsed.scheme or not parsed.netloc:
+            continue
 
-    if href.startswith("/url?"):
-        parsed = urlparse(href)
-        qs = parse_qs(parsed.query)
-        target = qs.get("q", qs.get("url", [href]))[0]
-    else:
-        target = href
+        if _is_arxiv_abs(target):
+            return target
+        if _is_arxiv_pdf(target) and pdf_candidate is None:
+            converted = _arxiv_abs_url_from_pdf(target)
+            if converted:
+                pdf_candidate = converted
 
-    if "arxiv.org/abs" not in target:
-        return None
-
-    return target
+    return pdf_candidate
 
 
 @app.get("/papers/schema")
@@ -137,3 +195,28 @@ def arxiv_lookup(
     if resolved and "arxiv.org/abs" in resolved:
         return {"url": resolved, "source": "arxiv"}
     return {"url": fallback, "source": "google"}
+
+
+def _test_arxiv_helpers() -> None:
+    """Lightweight assertions for helper utilities."""
+    # 1) /abs/ link should be preserved
+    assert _resolve_google_href("/url?q=https://arxiv.org/abs/2201.00001") == "https://arxiv.org/abs/2201.00001"
+    # 2) /pdf/ with .pdf suffix converts to /abs/
+    pdf_url = _resolve_google_href("/url?q=https://arxiv.org/pdf/2201.00001.pdf")
+    assert _arxiv_abs_url_from_pdf(pdf_url) == "https://arxiv.org/abs/2201.00001"
+    # 3) /pdf/ without .pdf suffix converts to /abs/
+    assert _arxiv_abs_url_from_pdf("https://arxiv.org/pdf/2201.00001") == "https://arxiv.org/abs/2201.00001"
+    # 4) Nested redirects via other domains are ignored by arXiv detectors
+    redirected = _resolve_google_href("/url?q=https://example.com/redirect?url=https://arxiv.org/abs/2201.00001")
+    assert not _is_arxiv_abs(redirected)
+    assert not _is_arxiv_pdf(redirected)
+    # 5) Known noise URLs are filtered
+    assert _looks_like_noise("https://translate.google.com/.../")
+    # 6) Google cache URLs are noise
+    assert _looks_like_noise("https://webcache.googleusercontent.com/...")
+    # 7) Helper returns None when no PDF identifier
+    assert _arxiv_abs_url_from_pdf("https://arxiv.org/pdf/") is None
+
+
+if __name__ == "__main__":
+    _test_arxiv_helpers()
