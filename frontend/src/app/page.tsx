@@ -645,7 +645,7 @@ export default function Home() {
   const [page, setPage] = useState(1);
   const [sortMode, setSortMode] = useState<SortMode>("random");
   const [randomSeed, setRandomSeed] = useState<string>(() => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`);
-  const [quickFiltersOpen, setQuickFiltersOpen] = useState(true);
+  const [quickFiltersOpen, setQuickFiltersOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pageAnimating, setPageAnimating] = useState(false);

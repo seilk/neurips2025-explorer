@@ -16,6 +16,10 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "NeurIPS 2025 Papers Explorer",
   description: "Fast search and filtering UI for NeurIPS 2025 accepted papers",
+  icons: {
+    icon: "/icon.svg",
+    shortcut: "/icon.svg",
+  },
 };
 
 export default function RootLayout({
