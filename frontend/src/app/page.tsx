@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, FormEvent, useEffect, useMemo, useState } from "react";
+import { Fragment, FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@iconify/react";
 import type { ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
@@ -69,13 +69,38 @@ const friendlyFieldName = (name: string) =>
 
 const escapeRegExp = (value: string) => value.replace(/[-/\\^$*+?.()|[\]{}]/g, "\\$&");
 
-const decodeHtmlEntities = (value: string): string =>
-  value
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'");
+const decodeHtmlEntities = (value: string): string => {
+  const named: Record<string, string> = {
+    amp: "&",
+    lt: "<",
+    gt: ">",
+    quot: '"',
+    apos: "'",
+    rsquo: "’",
+    lsquo: "‘",
+    ldquo: "“",
+    rdquo: "”",
+    nbsp: " ",
+    ndash: "–",
+    mdash: "—",
+  };
+
+  return value.replace(/&(#x?[0-9a-fA-F]+|[a-zA-Z]+);/g, (match, entity) => {
+    if (!entity) {
+      return match;
+    }
+    if (entity.startsWith("#x") || entity.startsWith("#X")) {
+      const code = Number.parseInt(entity.substring(2), 16);
+      return Number.isNaN(code) ? match : String.fromCodePoint(code);
+    }
+    if (entity.startsWith("#")) {
+      const code = Number.parseInt(entity.substring(1), 10);
+      return Number.isNaN(code) ? match : String.fromCodePoint(code);
+    }
+    const replacement = named[entity.toLowerCase()];
+    return replacement !== undefined ? replacement : match;
+  });
+};
 
 const formatValue = (value: unknown): string => {
   if (value === null || value === undefined) {
@@ -157,18 +182,18 @@ function formatAuthorsList(authorsValue: unknown): string {
     const names = (authorsValue as unknown[])
       .map((entry) => {
         if (typeof entry === "string") {
-          return entry;
+          return decodeHtmlEntities(entry);
         }
         if (entry && typeof entry === "object") {
           const candidate = entry as Record<string, unknown>;
           if (typeof candidate.fullname === "string") {
-            return candidate.fullname;
+            return decodeHtmlEntities(candidate.fullname);
           }
           if (typeof candidate.name === "string") {
-            return candidate.name;
+            return decodeHtmlEntities(candidate.name);
           }
           if (typeof candidate.display_name === "string") {
-            return candidate.display_name;
+            return decodeHtmlEntities(candidate.display_name);
           }
         }
         return null;
@@ -275,14 +300,15 @@ function renderHighlightedText(text: string, tokens: string[]): ReactNode {
   if (!text) {
     return text;
   }
+  const decoded = decodeHtmlEntities(text);
   const candidates = tokens.filter((token) => token.trim().length > 0);
   if (candidates.length === 0) {
-    return text;
+    return decoded;
   }
   const regex = new RegExp(`(${candidates.map(escapeRegExp).join("|")})`, "gi");
-  const parts = text.split(regex);
+  const parts = decoded.split(regex);
   if (parts.length <= 1) {
-    return text;
+    return decoded;
   }
   return parts.map((part, idx) => {
     if (!part) {
@@ -305,7 +331,7 @@ function renderValueWithHighlight(value: unknown, tokens: string[]): ReactNode {
   }
   if (Array.isArray(value)) {
     const joined = value
-      .map((item) => (typeof item === "string" ? item : JSON.stringify(item)))
+      .map((item) => (typeof item === "string" ? decodeHtmlEntities(item) : JSON.stringify(item)))
       .filter((item) => item && item.length > 0)
       .join(", ");
     if (!joined) {
@@ -316,7 +342,7 @@ function renderValueWithHighlight(value: unknown, tokens: string[]): ReactNode {
   if (typeof value === "object") {
     return JSON.stringify(value, null, 2);
   }
-  return renderHighlightedText(String(value), tokens);
+  return renderHighlightedText(decodeHtmlEntities(String(value)), tokens);
 }
 
 function FilterSection({ field, label, options, selected, onToggle }: FilterSectionProps) {
@@ -366,6 +392,103 @@ function FilterSection({ field, label, options, selected, onToggle }: FilterSect
   );
 }
 
+type AbstractToggleProps = {
+  text: string;
+  tokens: string[];
+};
+
+function AbstractToggle({ text, tokens }: AbstractToggleProps) {
+  const [open, setOpen] = useState(false);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const [maxHeight, setMaxHeight] = useState<string>("0px");
+  const heightRef = useRef<string>("0px");
+  const timeoutRef = useRef<number | null>(null);
+  const rafRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const el = contentRef.current;
+    if (!el) {
+      return undefined;
+    }
+
+    if (timeoutRef.current !== null) {
+      window.clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+    if (rafRef.current !== null) {
+      window.cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
+
+    if (open) {
+      const run = () => {
+        const height = el.scrollHeight;
+        setMaxHeight(`${height}px`);
+        heightRef.current = `${height}px`;
+        timeoutRef.current = window.setTimeout(() => {
+          setMaxHeight("auto");
+          heightRef.current = "auto";
+          timeoutRef.current = null;
+        }, 360);
+      };
+      rafRef.current = window.requestAnimationFrame(run);
+    } else {
+      if (heightRef.current === "auto") {
+        const height = el.scrollHeight;
+        setMaxHeight(`${height}px`);
+        heightRef.current = `${height}px`;
+        rafRef.current = window.requestAnimationFrame(() => {
+          setMaxHeight("0px");
+          heightRef.current = "0px";
+          rafRef.current = null;
+        });
+      } else {
+        setMaxHeight("0px");
+        heightRef.current = "0px";
+      }
+    }
+
+    return () => {
+      if (timeoutRef.current !== null) {
+        window.clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
+      if (rafRef.current !== null) {
+        window.cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
+    };
+  }, [open, text]);
+
+  if (!text.trim()) {
+    return null;
+  }
+
+  return (
+    <div className={`${styles.abstractToggle} ${open ? styles.abstractToggleOpen : ""}`}>
+      <button
+        type="button"
+        className={styles.abstractToggleButton}
+        onClick={() => setOpen((prev) => !prev)}
+        aria-expanded={open}
+      >
+        <span>{open ? "Hide abstract" : "Show abstract"}</span>
+        <Icon icon={open ? "mdi:chevron-up" : "mdi:chevron-down"} fontSize={18} />
+      </button>
+      <div
+        ref={contentRef}
+        className={styles.abstractContent}
+        style={{ maxHeight }}
+        aria-hidden={!open}
+      >
+        <div className={styles.abstractInner}>
+          <MarkdownBlock text={text} tokens={tokens} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function PaperCard({ paper, tokens }: PaperCardProps) {
   const titleRaw = paper["name"];
   const abstractRaw = paper["abstract"];
@@ -373,18 +496,18 @@ function PaperCard({ paper, tokens }: PaperCardProps) {
   const keywordsRaw = paper["keywords"];
   const eventTypeRaw = paper["event_type"] ?? paper["eventtype"];
 
-  const title = typeof titleRaw === "string" ? titleRaw : "Title unavailable";
-  const abstractText = abstractRaw ? String(abstractRaw) : "";
+  const title = typeof titleRaw === "string" ? decodeHtmlEntities(titleRaw) : "Title unavailable";
+  const abstractText = abstractRaw ? decodeHtmlEntities(String(abstractRaw)) : "";
   const authors = formatAuthorsList(authorsRaw);
   const institutions = formatInstitutionsList(authorsRaw);
   const topicValue = paper["topic"];
   const topicText = Array.isArray(topicValue)
     ? (topicValue as unknown[])
-        .map((value) => (value == null ? "" : String(value)))
+        .map((value) => (value == null ? "" : decodeHtmlEntities(String(value))))
         .filter((value) => value.trim().length > 0)
         .join(", ")
     : topicValue
-    ? String(topicValue)
+    ? decodeHtmlEntities(String(topicValue))
     : "";
 
   let firstAuthorInitial = "";
@@ -416,7 +539,7 @@ function PaperCard({ paper, tokens }: PaperCardProps) {
     }
   }
   const keywords = Array.isArray(keywordsRaw)
-    ? (keywordsRaw as unknown[]).map((value) => String(value))
+    ? (keywordsRaw as unknown[]).map((value) => (value == null ? "" : decodeHtmlEntities(String(value))))
     : [];
   const metadata = [
     { label: "Decision", value: paper["decision"] },
@@ -482,14 +605,7 @@ function PaperCard({ paper, tokens }: PaperCardProps) {
           )}
         </p>
       </header>
-      {abstractText && (
-        <details className={styles.abstractToggle}>
-          <summary>Show abstract</summary>
-          <div className={styles.abstractContent}>
-            <MarkdownBlock text={abstractText} tokens={tokens} />
-          </div>
-        </details>
-      )}
+      <AbstractToggle text={abstractText} tokens={tokens} />
       <div className={styles.cardMeta}>
         {topicText && (
           <span className={styles.metaItem}>
@@ -521,6 +637,7 @@ function PaperCard({ paper, tokens }: PaperCardProps) {
           <Icon icon="mdi:book-open-variant" fontSize={18} />
           {arxivPending ? "Opening..." : "Go to arXiv"}
         </button>
+        <p className={styles.linkNote}>If not found on arXiv, we'll check Google instead :)</p>
       </div>
     </article>
   );
@@ -540,6 +657,8 @@ export default function Home() {
   const [quickFiltersOpen, setQuickFiltersOpen] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pageAnimating, setPageAnimating] = useState(false);
+  const animationTimeoutRef = useRef<number | null>(null);
 
   const highlightTokens = useMemo(() => {
     if (!query) {
@@ -579,6 +698,11 @@ export default function Home() {
 
   useEffect(() => {
     const controller = new AbortController();
+    if (animationTimeoutRef.current !== null) {
+      window.clearTimeout(animationTimeoutRef.current);
+      animationTimeoutRef.current = null;
+    }
+    setPageAnimating(true);
     const runSearch = async () => {
       setLoading(true);
       setError(null);
@@ -617,6 +741,13 @@ export default function Home() {
         }
         setResults(data.results);
         setTotal(data.total);
+        if (animationTimeoutRef.current !== null) {
+          window.clearTimeout(animationTimeoutRef.current);
+        }
+        animationTimeoutRef.current = window.setTimeout(() => {
+          setPageAnimating(false);
+          animationTimeoutRef.current = null;
+        }, 220);
       } catch (err) {
         if ((err as Error).name === "AbortError") {
           return;
@@ -625,13 +756,20 @@ export default function Home() {
         setError(message);
         setResults([]);
         setTotal(0);
+        setPageAnimating(false);
       } finally {
         setLoading(false);
       }
     };
 
     runSearch();
-    return () => controller.abort();
+    return () => {
+      controller.abort();
+      if (animationTimeoutRef.current !== null) {
+        window.clearTimeout(animationTimeoutRef.current);
+        animationTimeoutRef.current = null;
+      }
+    };
   }, [query, filters, page, sortMode, randomSeed]);
 
   const quickFilters = useMemo(() => {
@@ -699,6 +837,12 @@ export default function Home() {
     setPage(1);
   };
 
+  const scrollToTop = () => {
+    if (typeof window !== "undefined") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  };
+
   const handleSortModeChange = (mode: SortMode) => {
     setSortMode((prev) => {
       if (prev === mode) {
@@ -718,15 +862,22 @@ export default function Home() {
     setPage(1);
   };
 
+  const goToPreviousPage = () => {
+    setPage((current) => Math.max(1, current - 1));
+    scrollToTop();
+  };
+
+  const goToNextPage = () => {
+    setPage((current) => {
+      const totalPagesLocal = Math.max(1, Math.ceil(total / PAGE_SIZE));
+      return Math.min(totalPagesLocal, current + 1);
+    });
+    scrollToTop();
+  };
+
   const handleTitleClick = () => {
     if (typeof window !== "undefined") {
       window.location.href = window.location.pathname;
-    }
-  };
-
-  const scrollToTop = () => {
-    if (typeof window !== "undefined") {
-      window.scrollTo({ top: 0, behavior: "smooth" });
     }
   };
 
@@ -833,14 +984,14 @@ export default function Home() {
                 <div className={styles.paginationControls}>
                   <button
                     type="button"
-                    onClick={() => setPage((current) => Math.max(1, current - 1))}
+                    onClick={goToPreviousPage}
                     disabled={page === 1 || loading}
                   >
                     Previous
                   </button>
                   <button
                     type="button"
-                    onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+                    onClick={goToNextPage}
                     disabled={page >= totalPages || loading}
                   >
                     Next
@@ -859,9 +1010,15 @@ export default function Home() {
               <div className={styles.empty}>No papers match your filters. Try adjusting the search or filter set.</div>
             )}
 
-            {results.map((paper) => (
-              <PaperCard key={String(paper.id)} paper={paper} tokens={highlightTokens} />
-            ))}
+            {results.length > 0 && (
+              <div
+                className={`${styles.resultsList} ${pageAnimating ? styles.resultsAnimating : ""}`}
+              >
+                {results.map((paper) => (
+                  <PaperCard key={String(paper.id)} paper={paper} tokens={highlightTokens} />
+                ))}
+              </div>
+            )}
             {results.length > 0 && (
               <button
                 type="button"
