@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import re
 import sqlite3
+from html import unescape
 from typing import Any, Dict, Iterable, List, Sequence, Tuple
 
 from . import database
@@ -83,6 +84,44 @@ def record_matches_filters(record: Dict[str, Any], filters: Dict[str, List[str]]
         if not any(value.lower() in token for token in lowered_tokens for value in values):
             return False
     return True
+
+
+_WHITESPACE_RE = re.compile(r"\s+")
+
+
+def _normalise_text(value: Any) -> str:
+    cleaned = unescape(str(value)).lower()
+    return _WHITESPACE_RE.sub(" ", cleaned).strip()
+
+
+def record_contains_phrase(record: Dict[str, Any], phrase: str) -> bool:
+    if not phrase:
+        return True
+    target = _normalise_text(phrase)
+    if not target:
+        return True
+
+    def iterate(value: Any) -> Iterable[str]:
+        if value is None:
+            return
+        if isinstance(value, str):
+            yield value
+        elif isinstance(value, (int, float, bool)):
+            yield str(value)
+        elif isinstance(value, dict):
+            for nested in value.values():
+                yield from iterate(nested)
+        elif isinstance(value, Iterable):
+            for item in value:
+                yield from iterate(item)
+        else:
+            yield str(value)
+
+    for candidate in iterate(record):
+        normalised = _normalise_text(candidate)
+        if target in normalised:
+            return True
+    return False
 
 
 def sort_records(records: List[Dict[str, Any]], field: str, descending: bool = False) -> None:
@@ -169,6 +208,9 @@ class PaperStore:
         candidate_records = [self.record_by_id[i] for i in id_candidates]
 
         matched_records = [record for record in candidate_records if record_matches_filters(record, filters_norm)]
+
+        if query:
+            matched_records = [record for record in matched_records if record_contains_phrase(record, query)]
 
         if sort_by == "random":
             # Stable, seedable random ordering across pages using a deterministic hash
