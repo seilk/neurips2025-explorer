@@ -120,15 +120,6 @@ const formatValue = (value: unknown): string => {
   return String(value);
 };
 
-function shuffleResults<T>(items: T[]): T[] {
-  const arr = [...items];
-  for (let i = arr.length - 1; i > 0; i -= 1) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [arr[i], arr[j]] = [arr[j], arr[i]];
-  }
-  return arr;
-}
-
 function MarkdownBlock({ text, tokens }: { text: string; tokens: string[] }) {
   const normalised = useMemo(() => text.replace(/\r\n/g, "\n").trim(), [text]);
   const highlightPlugin = useMemo(() => createHighlightRehype(tokens, styles.highlight), [tokens]);
@@ -637,7 +628,7 @@ function PaperCard({ paper, tokens }: PaperCardProps) {
           <Icon icon="mdi:book-open-variant" fontSize={18} />
           {arxivPending ? "Opening..." : "Go to arXiv"}
         </button>
-        <p className={styles.linkNote}>If not found on arXiv, we'll check Google instead :)</p>
+        <p className={styles.linkNote}>If not found on arXiv, we&apos;ll check Google instead :)</p>
       </div>
     </article>
   );
