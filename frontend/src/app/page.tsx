@@ -763,6 +763,15 @@ export default function Home() {
     };
   }, [query, filters, page, sortMode, randomSeed]);
 
+  const pageScrollInitialised = useRef(false);
+  useEffect(() => {
+    if (!pageScrollInitialised.current) {
+      pageScrollInitialised.current = true;
+      return;
+    }
+    scrollToTop();
+  }, [page]);
+
   const quickFilters = useMemo(() => {
     if (!schema) {
       return [] as string[];
@@ -855,7 +864,6 @@ export default function Home() {
 
   const goToPreviousPage = () => {
     setPage((current) => Math.max(1, current - 1));
-    scrollToTop();
   };
 
   const goToNextPage = () => {
@@ -863,7 +871,6 @@ export default function Home() {
       const totalPagesLocal = Math.max(1, Math.ceil(total / PAGE_SIZE));
       return Math.min(totalPagesLocal, current + 1);
     });
-    scrollToTop();
   };
 
   const handleTitleClick = () => {
