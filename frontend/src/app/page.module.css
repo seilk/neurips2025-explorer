@@ -577,28 +577,43 @@
   }
 }
 
-.floatingPagingControls {
+.floatingPagingLabel {
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.fixedPagingTop,
+.fixedPagingBottom {
   position: fixed;
-  bottom: 32px;
-  left: 32px;
+  left: 50%;
+  transform: translateX(-50%);
   display: inline-flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 14px;
+  gap: 8px;
+  padding: 9px 16px;
   border-radius: 999px;
-  background: rgba(15, 23, 42, 0.9);
+  background: rgba(15, 23, 42, 0.88);
   color: #f8fafc;
   box-shadow: 0 16px 30px rgba(15, 23, 42, 0.25);
-  z-index: 50;
+  z-index: 60;
   backdrop-filter: blur(8px);
 }
 
-.floatingPagingControls button {
+.fixedPagingTop {
+  top: 16px;
+}
+
+.fixedPagingBottom {
+  bottom: 32px;
+}
+
+.fixedPagingTop button,
+.fixedPagingBottom button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
+  width: 34px;
+  height: 34px;
   border-radius: 50%;
   border: none;
   background: rgba(248, 250, 252, 0.2);
@@ -607,32 +622,33 @@
   transition: background 0.2s ease, transform 0.2s ease;
 }
 
-.floatingPagingControls button:hover:not(:disabled) {
+.fixedPagingTop button:hover:not(:disabled),
+.fixedPagingBottom button:hover:not(:disabled) {
   background: rgba(248, 250, 252, 0.35);
   transform: translateY(-1px);
 }
 
-.floatingPagingControls button:disabled {
+.fixedPagingTop button:disabled,
+.fixedPagingBottom button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
-.floatingPagingLabel {
-  font-weight: 600;
-  font-size: 0.95rem;
-}
-
 @media (max-width: 640px) {
-  .floatingPagingControls {
-    bottom: 20px;
-    left: 20px;
-    padding: 8px 12px;
-    gap: 8px;
+  .fixedPagingTop {
+    top: 12px;
+    padding: 8px 14px;
   }
 
-  .floatingPagingControls button {
-    width: 34px;
-    height: 34px;
+  .fixedPagingBottom {
+    bottom: 20px;
+    padding: 8px 14px;
+  }
+
+  .fixedPagingTop button,
+  .fixedPagingBottom button {
+    width: 32px;
+    height: 32px;
   }
 }
 

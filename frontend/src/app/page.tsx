@@ -996,6 +996,27 @@ export default function Home() {
             )}
             {results.length > 0 && (
               <>
+                <div className={styles.fixedPagingTop}>
+                  <button
+                    type="button"
+                    onClick={goToPreviousPage}
+                    disabled={page === 1 || loading}
+                    aria-label="Previous page"
+                  >
+                    <Icon icon="mdi:chevron-left" fontSize={20} />
+                  </button>
+                  <span className={styles.floatingPagingLabel}>
+                    {page} / {totalPages}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={goToNextPage}
+                    disabled={page >= totalPages || loading}
+                    aria-label="Next page"
+                  >
+                    <Icon icon="mdi:chevron-right" fontSize={20} />
+                  </button>
+                </div>
                 <button
                   type="button"
                   onClick={scrollToTop}
@@ -1004,7 +1025,7 @@ export default function Home() {
                 >
                   <Icon icon="mdi:arrow-up" fontSize={24} />
                 </button>
-                <div className={styles.floatingPagingControls}>
+                <div className={styles.fixedPagingBottom}>
                   <button
                     type="button"
                     onClick={goToPreviousPage}
