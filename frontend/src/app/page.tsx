@@ -838,9 +838,27 @@ export default function Home() {
   };
 
   const scrollToTop = () => {
-    if (typeof window !== "undefined") {
-      window.scrollTo({ top: 0, behavior: "auto" });
+    if (typeof window === "undefined") {
+      return;
     }
+    const start = window.scrollY || window.pageYOffset;
+    if (start === 0) {
+      return;
+    }
+    const duration = 180;
+    const startTime = performance.now();
+
+    const step = (currentTime: number) => {
+      const elapsed = currentTime - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      window.scrollTo(0, start * (1 - eased));
+      if (progress < 1) {
+        window.requestAnimationFrame(step);
+      }
+    };
+
+    window.requestAnimationFrame(step);
   };
 
   const handleSortModeChange = (mode: SortMode) => {

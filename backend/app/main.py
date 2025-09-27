@@ -2,11 +2,10 @@
 from __future__ import annotations
 
 from functools import lru_cache
-from urllib.parse import parse_qs, quote_plus, urlparse
+from urllib.parse import quote_plus, urlparse
 import xml.etree.ElementTree as ET
 
 import requests
-from bs4 import BeautifulSoup
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -14,37 +13,6 @@ from .models import PaperResponse, SearchRequest, SearchResponse
 from .search import PaperStore
 
 app = FastAPI(title="NeurIPS 2025 Papers API", version="1.0.0")
-
-NOISE_KEYWORDS = (
-    "webcache.googleusercontent.com",
-    "translate.google",
-    "/search?",
-    "tbm=",
-    "imgres",
-    "policies.google",
-    "support.google",
-)
-
-
-def _resolve_google_href(href: str) -> str:
-    href = (href or "").strip()
-    if not href:
-        return ""
-    if href.startswith("/url?") or href.startswith("https://www.google.com/url?") or href.startswith("http://www.google.com/url?"):
-        parsed = urlparse(href)
-        qs = parse_qs(parsed.query)
-        for key in ("q", "url"):
-            values = qs.get(key)
-            if values:
-                return values[0]
-        return ""
-    return href
-
-
-def _looks_like_noise(url: str) -> bool:
-    lowered = url.lower()
-    return any(token in lowered for token in NOISE_KEYWORDS)
-
 
 def _is_arxiv_abs(url: str) -> bool:
     parsed = urlparse(url)
@@ -190,56 +158,16 @@ def root() -> dict[str, str]:
 
 @lru_cache(maxsize=256)
 def lookup_arxiv_url(title: str, author_initial: str, author_last: str) -> str | None:
-    """Return the best arXiv link using arXiv API first, then Google SERP fallback."""
+    """Return the best arXiv link using the arXiv export API."""
     cleaned_title = title.strip()
+    if ":" in cleaned_title:
+        cleaned_title = cleaned_title.split(":", 1)[-1].strip()
+    cleaned_title = cleaned_title.replace("-", " ")
     if not cleaned_title:
         return None
 
-    # 1) Try arXiv export API (most reliable and bot-safe)
     api_hit = _lookup_arxiv_via_export_api(cleaned_title, author_last)
-    if api_hit:
-        return api_hit
-
-    # 2) Fallback to Google SERP parsing
-    author_last_clean = author_last.strip()
-    query_parts = [cleaned_title]
-    if author_last_clean:
-        query_parts.append(f"intext: {author_last_clean}")
-    query = quote_plus(" ".join(query_parts))
-    search_url = f"https://www.google.com/search?q={query}&hl=en"
-    try:
-        response = requests.get(
-            search_url,
-            headers={
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
-            },
-            timeout=5,
-        )
-        response.raise_for_status()
-    except requests.RequestException:
-        return None
-
-    soup = BeautifulSoup(response.text, "html.parser")
-    pdf_candidate: str | None = None
-
-    for anchor in soup.find_all("a", href=True):
-        target = _resolve_google_href(anchor["href"])
-        if not target:
-            continue
-        if _looks_like_noise(target):
-            continue
-        parsed = urlparse(target)
-        if not parsed.scheme or not parsed.netloc:
-            continue
-
-        if _is_arxiv_abs(target):
-            return target
-        if _is_arxiv_pdf(target) and pdf_candidate is None:
-            converted = _arxiv_abs_url_from_pdf(target)
-            if converted:
-                pdf_candidate = converted
-
-    return pdf_candidate
+    return api_hit
 
 
 @app.get("/papers/schema")
@@ -285,23 +213,14 @@ def arxiv_lookup(
 
 def _test_arxiv_helpers() -> None:
     """Lightweight assertions for helper utilities."""
-    # 1) /abs/ link should be preserved
-    assert _resolve_google_href("/url?q=https://arxiv.org/abs/2201.00001") == "https://arxiv.org/abs/2201.00001"
+    # 1) /abs/ link should pass through untouched
+    assert _is_arxiv_abs("https://arxiv.org/abs/2201.00001")
     # 2) /pdf/ with .pdf suffix converts to /abs/
-    pdf_url = _resolve_google_href("/url?q=https://arxiv.org/pdf/2201.00001.pdf")
-    assert _arxiv_abs_url_from_pdf(pdf_url) == "https://arxiv.org/abs/2201.00001"
+    assert _arxiv_abs_url_from_pdf("https://arxiv.org/pdf/2201.00001.pdf") == "https://arxiv.org/abs/2201.00001"
     # 3) /pdf/ without .pdf suffix converts to /abs/
     assert _arxiv_abs_url_from_pdf("https://arxiv.org/pdf/2201.00001") == "https://arxiv.org/abs/2201.00001"
-    # 4) Nested redirects via other domains are ignored by arXiv detectors
-    redirected = _resolve_google_href("/url?q=https://example.com/redirect?url=https://arxiv.org/abs/2201.00001")
-    assert not _is_arxiv_abs(redirected)
-    assert not _is_arxiv_pdf(redirected)
-    # 5) Known noise URLs are filtered
-    assert _looks_like_noise("https://translate.google.com/.../")
-    # 6) Google cache URLs are noise
-    assert _looks_like_noise("https://webcache.googleusercontent.com/...")
-    # 7) Helper returns None when no PDF identifier
-    assert _arxiv_abs_url_from_pdf("https://arxiv.org/pdf/") is None
+    # 4) Non-arXiv domains are ignored
+    assert _arxiv_abs_url_from_pdf("https://example.com/pdf/2201.00001.pdf") is None
 
 
 if __name__ == "__main__":
