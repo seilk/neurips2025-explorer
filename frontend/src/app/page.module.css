@@ -345,6 +345,24 @@
   align-items: center;
 }
 
+.paginationControls {
+  display: flex;
+  gap: 8px;
+}
+
+.pagination button {
+  padding: 10px 16px;
+  border-radius: 10px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  cursor: pointer;
+}
+
+.pagination button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .card {
   background: var(--color-surface);
   border-radius: 18px;
@@ -577,79 +595,9 @@
   }
 }
 
-.floatingPagingLabel {
-  font-weight: 600;
-  font-size: 0.95rem;
-}
-
-.fixedPagingTop,
-.fixedPagingBottom {
-  position: fixed;
-  left: 50%;
-  transform: translateX(-50%);
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 9px 16px;
-  border-radius: 999px;
-  background: rgba(15, 23, 42, 0.88);
-  color: #f8fafc;
-  box-shadow: 0 16px 30px rgba(15, 23, 42, 0.25);
-  z-index: 60;
-  backdrop-filter: blur(8px);
-}
-
-.fixedPagingTop {
-  top: 16px;
-}
-
-.fixedPagingBottom {
-  bottom: 32px;
-}
-
-.fixedPagingTop button,
-.fixedPagingBottom button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
-  border: none;
-  background: rgba(248, 250, 252, 0.2);
-  color: inherit;
-  cursor: pointer;
-  transition: background 0.2s ease, transform 0.2s ease;
-}
-
-.fixedPagingTop button:hover:not(:disabled),
-.fixedPagingBottom button:hover:not(:disabled) {
-  background: rgba(248, 250, 252, 0.35);
-  transform: translateY(-1px);
-}
-
-.fixedPagingTop button:disabled,
-.fixedPagingBottom button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-@media (max-width: 640px) {
-  .fixedPagingTop {
-    top: 12px;
-    padding: 8px 14px;
-  }
-
-  .fixedPagingBottom {
-    bottom: 20px;
-    padding: 8px 14px;
-  }
-
-  .fixedPagingTop button,
-  .fixedPagingBottom button {
-    width: 32px;
-    height: 32px;
-  }
+.bottomPagination {
+  justify-content: space-between;
+  margin-top: 32px;
 }
 
 @media (max-width: 480px) {

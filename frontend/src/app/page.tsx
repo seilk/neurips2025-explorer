@@ -972,6 +972,22 @@ export default function Home() {
                 </div>
               </div>
               <div className={`${styles.pagination} ${styles.summaryText}`}>
+                <div className={styles.paginationControls}>
+                  <button
+                    type="button"
+                    onClick={goToPreviousPage}
+                    disabled={page === 1 || loading}
+                  >
+                    Previous
+                  </button>
+                  <button
+                    type="button"
+                    onClick={goToNextPage}
+                    disabled={page >= totalPages || loading}
+                  >
+                    Next
+                  </button>
+                </div>
                 <span>
                   Page {page} of {totalPages}
                 </span>
@@ -995,58 +1011,38 @@ export default function Home() {
               </div>
             )}
             {results.length > 0 && (
-              <>
-                <div className={styles.fixedPagingTop}>
+              <button
+                type="button"
+                onClick={scrollToTop}
+                className={styles.floatingTopButton}
+                aria-label="Go to top"
+              >
+                <Icon icon="mdi:arrow-up" fontSize={24} />
+              </button>
+            )}
+
+            {results.length > 0 && (
+              <div className={`${styles.pagination} ${styles.bottomPagination} ${styles.summaryText}`}>
+                <div className={styles.paginationControls}>
                   <button
                     type="button"
                     onClick={goToPreviousPage}
                     disabled={page === 1 || loading}
-                    aria-label="Previous page"
                   >
-                    <Icon icon="mdi:chevron-left" fontSize={20} />
+                    Previous
                   </button>
-                  <span className={styles.floatingPagingLabel}>
-                    {page} / {totalPages}
-                  </span>
                   <button
                     type="button"
                     onClick={goToNextPage}
                     disabled={page >= totalPages || loading}
-                    aria-label="Next page"
                   >
-                    <Icon icon="mdi:chevron-right" fontSize={20} />
+                    Next
                   </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={scrollToTop}
-                  className={styles.floatingTopButton}
-                  aria-label="Go to top"
-                >
-                  <Icon icon="mdi:arrow-up" fontSize={24} />
-                </button>
-                <div className={styles.fixedPagingBottom}>
-                  <button
-                    type="button"
-                    onClick={goToPreviousPage}
-                    disabled={page === 1 || loading}
-                    aria-label="Previous page"
-                  >
-                    <Icon icon="mdi:chevron-left" fontSize={22} />
-                  </button>
-                  <span className={styles.floatingPagingLabel}>
-                    {page} / {totalPages}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={goToNextPage}
-                    disabled={page >= totalPages || loading}
-                    aria-label="Next page"
-                  >
-                    <Icon icon="mdi:chevron-right" fontSize={22} />
-                  </button>
-                </div>
-              </>
+                <span>
+                  Page {page} of {totalPages}
+                </span>
+              </div>
             )}
           </section>
         </section>
