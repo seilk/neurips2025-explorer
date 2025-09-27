@@ -345,24 +345,6 @@
   align-items: center;
 }
 
-.paginationControls {
-  display: flex;
-  gap: 8px;
-}
-
-.pagination button {
-  padding: 10px 16px;
-  border-radius: 10px;
-  border: 1px solid var(--color-border);
-  background: var(--color-surface);
-  cursor: pointer;
-}
-
-.pagination button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
 .card {
   background: var(--color-surface);
   border-radius: 18px;
@@ -592,6 +574,65 @@
   .floatingTopButton {
     bottom: 20px;
     right: 20px;
+  }
+}
+
+.floatingPagingControls {
+  position: fixed;
+  bottom: 32px;
+  left: 32px;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.9);
+  color: #f8fafc;
+  box-shadow: 0 16px 30px rgba(15, 23, 42, 0.25);
+  z-index: 50;
+  backdrop-filter: blur(8px);
+}
+
+.floatingPagingControls button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(248, 250, 252, 0.2);
+  color: inherit;
+  cursor: pointer;
+  transition: background 0.2s ease, transform 0.2s ease;
+}
+
+.floatingPagingControls button:hover:not(:disabled) {
+  background: rgba(248, 250, 252, 0.35);
+  transform: translateY(-1px);
+}
+
+.floatingPagingControls button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.floatingPagingLabel {
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+@media (max-width: 640px) {
+  .floatingPagingControls {
+    bottom: 20px;
+    left: 20px;
+    padding: 8px 12px;
+    gap: 8px;
+  }
+
+  .floatingPagingControls button {
+    width: 34px;
+    height: 34px;
   }
 }
 
