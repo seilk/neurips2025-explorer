@@ -256,8 +256,12 @@
   background: rgba(249, 115, 22, 0.25);
   color: #c2410c;
   font-weight: 600;
-  padding: 0 2px;
   border-radius: 4px;
+}
+
+.highlightContainer {
+  display: inline;
+  white-space: pre-wrap;
 }
 
 .results {
@@ -399,7 +403,6 @@
 }
 
 .metaItem span {
-  font-weight: 600;
   color: var(--color-text);
 }
 

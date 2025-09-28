@@ -102,6 +102,37 @@ const decodeHtmlEntities = (value: string): string => {
   });
 };
 
+type HighlightSegment = {
+  value: string;
+  highlighted: boolean;
+};
+
+function buildHighlightSegments(text: string, regex: RegExp): HighlightSegment[] {
+  if (!regex.global) {
+    throw new Error("Highlight regex must use global flag");
+  }
+  const segments: HighlightSegment[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(text)) !== null) {
+    const start = match.index;
+    const matched = match[0];
+    if (matched === "") {
+      regex.lastIndex += 1;
+      continue;
+    }
+    if (start > lastIndex) {
+      segments.push({ value: text.slice(lastIndex, start), highlighted: false });
+    }
+    segments.push({ value: matched, highlighted: true });
+    lastIndex = start + matched.length;
+  }
+  if (lastIndex < text.length) {
+    segments.push({ value: text.slice(lastIndex), highlighted: false });
+  }
+  return segments;
+}
+
 const formatValue = (value: unknown): string => {
   if (value === null || value === undefined) {
     return "-";
@@ -253,29 +284,25 @@ function createHighlightRehype(tokens: string[], className: string): Plugin | nu
         return;
       }
 
-      const parts = node.value.split(pattern);
-      if (parts.length <= 1) {
+      const regex = new RegExp(pattern);
+      const segments = buildHighlightSegments(node.value, regex);
+      if (segments.length === 0) {
         return;
       }
 
-      const newNodes = parts
-        .map((part, idx) => {
-          if (!part) {
-            return null;
-          }
-          if (idx % 2 === 1) {
-            return {
-              type: "element",
-              tagName: "span",
-              properties: { className: [className] },
-              children: [{ type: "text", value: part }],
-            };
-          }
-          return { type: "text", value: part };
-        })
-        .filter(Boolean);
+      const newNodes = segments.map((segment) => {
+        if (segment.highlighted) {
+          return {
+            type: "element",
+            tagName: "span",
+            properties: { className: [className] },
+            children: [{ type: "text", value: segment.value }],
+          } as Element;
+        }
+        return { type: "text", value: segment.value };
+      });
 
-      if (!newNodes.length) {
+      if (newNodes.length === 0) {
         return;
       }
 
@@ -294,26 +321,27 @@ function renderHighlightedText(text: string, tokens: string[]): ReactNode {
   const decoded = decodeHtmlEntities(text);
   const candidates = tokens.filter((token) => token.trim().length > 0);
   if (candidates.length === 0) {
-    return decoded;
+    return <span className={styles.highlightContainer}>{decoded}</span>;
   }
   const regex = new RegExp(`(${candidates.map(escapeRegExp).join("|")})`, "gi");
-  const parts = decoded.split(regex);
-  if (parts.length <= 1) {
-    return decoded;
+  const segments = buildHighlightSegments(decoded, regex);
+  if (segments.length === 0) {
+    return <span className={styles.highlightContainer}>{decoded}</span>;
   }
-  return parts.map((part, idx) => {
-    if (!part) {
-      return null;
-    }
-    if (idx % 2 === 1) {
-      return (
-        <span key={idx} className={styles.highlight}>
-          {part}
-        </span>
-      );
-    }
-    return <Fragment key={idx}>{part}</Fragment>;
-  });
+  return (
+    <span className={styles.highlightContainer}>
+      {segments.map((segment, idx) => {
+        if (segment.highlighted) {
+          return (
+            <span key={idx} className={styles.highlight}>
+              {segment.value}
+            </span>
+          );
+        }
+        return <Fragment key={idx}>{segment.value}</Fragment>;
+      })}
+    </span>
+  );
 }
 
 function renderValueWithHighlight(value: unknown, tokens: string[]): ReactNode {
